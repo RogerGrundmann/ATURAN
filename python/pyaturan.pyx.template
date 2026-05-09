@@ -1,0 +1,97 @@
+import sys
+
+from aturan cimport cUranusModel
+
+from libcpp cimport bool
+from libcpp.string cimport string
+from libcpp.vector cimport vector
+
+class Model:
+    """
+        ATJUP Uranus' cell structure in the atmosphere
+    """
+    def __init__(self):
+        self.uranus = Uranus()
+        self.output_path = ""
+        self.config_xml = ""
+
+    def run_aturan(self, output_path, cfg_xml):
+        self.output_path = output_path
+        self.config_xml = cfg_xml
+
+#        cfg_xml = cfg_xml.str.encode('utf-8')
+
+        print self.output_path 
+        print self.config_xml 
+        self.uranus.load_config(self.config_xml)
+        self.uranus.run()
+
+
+
+
+cdef class Uranus:
+    """ 
+    Cython wrapper class for C++ class Uranus
+    """
+    cdef:
+        cUranusModel *_thisptr
+
+    def __cinit__(Uranus self):
+        # Initialize the "this pointer" to NULL so __dealloc__
+        # knows if there is something to deallocate. Do not 
+        # call new cUranusModel() here.
+        self._thisptr = NULL
+        
+    def __init__(Uranus self):
+        # Constructing the C++ object might raise std::bad_alloc
+        # which is automatically converted to a Python MemoryError
+        # by Cython. We therefore need to call "new cJupiterModel()" in
+        # __init__ instead of __cinit__.
+        self._thisptr = new cUranusModel() 
+
+    def __dealloc__(Uranus self):
+        # Only call del if the C++ object is alive, 
+        # or we will get a segfault.
+        if self._thisptr != NULL:
+            del self._thisptr
+            
+    cdef int _check_alive(Uranus self) except -1:
+        # Because of the context manager protocol, the C++ object
+        # might die before PyJupiter self is reclaimed.
+        # We therefore need a small utility to check for the
+        # availability of self._thisptr
+        if self._thisptr == NULL:
+            raise RuntimeError("Wrapped C++ object is deleted")
+        else:
+            return 0
+
+    def load_config(Uranus self, str filename):
+        self._check_alive()
+        self._thisptr.LoadConfig(filename)
+        return None
+
+    def run(Uranus self):
+        self._check_alive()
+        self._thisptr.Run()
+        return None
+
+{{ uranus_params }}
+
+    # The context manager protocol allows us to precisely
+    # control the liftetime of the wrapped C++ object. del
+    # is called deterministically and independently of 
+    # the Python garbage collection.
+
+    def __enter__(Uranus self):
+        self._check_alive()
+        return self
+    
+    def __exit__(Uranus self, exc_tp, exc_val, exc_tb):
+        if self._thisptr != NULL:
+            del self._thisptr 
+            self._thisptr = NULL # inform __dealloc__
+        return False # propagate exceptions
+
+cdef public void PythonPrint(const char *s):
+    print s,
+    sys.stdout.flush()

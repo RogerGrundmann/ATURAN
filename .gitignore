@@ -1,0 +1,37 @@
+# Compiled artifacts
+*.o
+*.d
+*.a
+*.so
+*.so.*
+
+# Python build artifacts
+*.pyc
+__pycache__/
+*.egg-info/
+build/
+dist/
+python/build/
+
+# Cython generated C++
+python/pyaturan.cpp
+
+# Simulation output data
+python/output-Uranus*/
+uranus/output-Uranus*/
+planet/output-Uranus*/
+
+# Executables
+cli/uran
+python/uran
+planet/uran
+
+# Reference papers (copyright)
+Reaction_Papers/
+
+# ODT and PDF documents
+*.odt
+*.pdf
+
+# Claude Code session data
+.claude/
