@@ -16,8 +16,8 @@ CFLAGS = -Wall -fPIC -std=c++11 -Ilib -Iplanet -Itinyxml2 -fopenmp -MMD -MP
 # Common files for the shared lib (libaturan.a)
 LIB_OBJ = lib/Array.o lib/Array_2D.o lib/Array_1D.o lib/Config.o lib/Utils.o lib/FFT.o
 
-ATURAN_OBJ = planet/cUranusModel.o planet/PrintMsg_Uran.o planet/RungeKutta_Uran.o \
-planet/RHS_Uran.o planet/ParaView_Uran.o planet/Thermo_Uran.o \
+ATURAN_OBJ = planet/cUranusModel.o planet/PrintMsg_Uran.o planet/RungeKutta_Uran_Turb.o \
+planet/RHS_Uran_Turb.o planet/ParaView_Uran.o planet/Thermo_Uran.o \
 planet/InitVariables_Uran.o planet/InitVelocity_Uran.o planet/FileIO_Uran.o \
 planet/Pressure_Uran.o planet/SaturationAdjustmentUran.o \
 planet/Delegations_Uran.o planet/BC_Uran.o
