@@ -55,10 +55,21 @@ void cUranusModel::printMinMax(){
     searchMinMax_3D(" max 3D h2s_cloud ", " min 3D h2s_cloud ", " kg/m3", h2s_cloud, 1.0);
     searchMinMax_3D(" max 3D h2s_ice ", " min 3D h2s_ice ", " kg/m3", h2s_ice, 1.0);
 
-    // The turbulence and precipitation rows the other three models print are NOT here: ATURAN
-    // has taken neither template, so tke, dis, nue, vel_star, P_rain, P_snow, P_graupel,
-    // P_nh3_rain, P_ch4_rain, P_nh4sh, Q_precip and the three surface precipitation maps do not
-    // exist in this model. They belong with those ports, not with the reporting one.
+    // The turbulence closure's own fields. Zero unless ATURAN_TURB is set, and printed regardless
+    // so that switching the knob on produces something visible: nue* is what the closure exists to
+    // compute, and the question it must answer on Uranus is whether it is larger or smaller than
+    // the molecular background 1/re = 1e-3. ATSAT's turned out ~77x SMALLER — the opposite of
+    // ATJUP's situation and of what ATJUP's comment claimed — and ATURAN's re is 1000 as well.
+    searchMinMax_3D(" max 3D tke ", " min 3D tke ", "/", tke, 1.0);
+    searchMinMax_3D(" max 3D dis ", " min 3D dis ", "/", dis, 1.0);
+    searchMinMax_3D(" max 3D nue ", " min 3D nue ", "/", nue, 1.0);
+    // Per-column friction velocity u_tau, the quantity the closure's k* seed goes as the SQUARE
+    // of. Printed because k* seeding to zero is otherwise unattributable.
+    searchMinMax_2D(" max 2D vel_star ", " min 2D vel_star ", " m/s", vel_star, 1.0);
+
+    // The precipitation rows the other three models print are NOT here: ATURAN has not taken that
+    // template, so P_rain, P_snow, P_graupel, P_nh3_rain, P_ch4_rain, P_nh4sh, Q_precip and the
+    // three surface precipitation maps do not exist in this model. They belong with that port.
     cout << endl;
 
     cout << endl;

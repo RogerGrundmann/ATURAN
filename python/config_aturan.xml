@@ -12,6 +12,7 @@
         <buoyancy>1</buoyancy>  <!-- buoyancy force (double) -->
         <chemical_reaction>1</chemical_reaction>  <!-- chemical reactions included (double) -->
         <epsres>1e-05</epsres>  <!-- accuracy of relative and absolute errors (double) -->
+        <turb_model>k_omega_SST</turb_model>  <!-- turbulence model: none, k_epsilon, k_omega, k_omega_SST (string) -->
         <L_atm>360.0</L_atm>  <!-- extension of the troposhere in km, 360km/40 steps = 9km (double) -->
         <tropopause_pole>125.0</tropopause_pole>  <!-- extension of the troposphere at the poles in km (double) -->
         <tropopause_equator>115.0</tropopause_equator>  <!-- extension of the troposphere at the equator in km (double) -->

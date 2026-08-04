@@ -18,6 +18,7 @@ void cUranusModel::SetDefaultConfig() {
   buoyancy = 1;
   chemical_reaction = 1;
   epsres = 1e-05;
+  turb_model = "k_omega_SST";
   L_atm = 360.0;
   tropopause_pole = 125.0;
   tropopause_equator = 115.0;

@@ -40,6 +40,14 @@ def main():
             ('chemical_reaction', 'chemical reactions included', 'double', 1),
             ('epsres', 'accuracy of relative and absolute errors', 'double', 0.00001),
 
+# Turbulence closure selection, as in ATSAT, ATJUP and ATOM. TurbulenceUran reads this; the module
+# as a whole is still gated by ATURAN_TURB, and ATURAN_TURB_MODEL overrides this value at runtime.
+# Uncomment one of the alternatives below to change the default.
+            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'k_omega_SST'),
+#            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'k_omega'),
+#            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'k_epsilon'),
+#            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'none'),
+
             ('L_atm', 'extension of the troposhere in km, 360km/40 steps = 9km', 'double', 360.0),
 
 #            ('tropopause_pole', 'extension of the troposphere at the poles in km', 'double', 115.0),

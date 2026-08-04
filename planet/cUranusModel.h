@@ -54,6 +54,7 @@ class cUranusModel{
     template<class M> friend class PressureSolver;
     template<class M> friend class Reporting;
     template<class M> friend class BoundaryConditions;
+    template<class M> friend class Turbulence;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -76,6 +77,43 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+
+    // ---- Turbulence closure fields, for the SHARED Turbulence.h ----
+    //
+    // STAGE ONE OF THREE, following the staging ATSAT used (902c609, 4b1072c, then the coupling)
+    // and ATNEPT after it. What arrives with this set is the CLOSURE: it reads the velocity field
+    // and fills nue* and its diagnostics. k* and dis* are allocated and written by the closure but
+    // are NOT yet prognostic — nothing integrates them in RungeKuttaUran, which predates the
+    // closure entirely — and nue* reaches no momentum or scalar equation. Those are stages two
+    // and three.
+    //
+    // tken/disn exist now so the prognostic stage has the start-of-step copies it will need
+    // without a second pass over this header.
+    Array tke;                  // turbulent kinetic energy k*      [dimensionless]
+    Array dis;                  // dissipation eps* or omega*       [dimensionless]
+    Array tken;                 // k* at the start of the RK4 step
+    Array disn;                 // dis* at the start of the RK4 step
+    Array nue;                  // eddy viscosity nue* (the closure's own name)
+    Array nue_t;                // eddy viscosity as an RHS would read it
+    Array prod;                 // shear production P_k
+    Array tke_source;           // P_k - Y_k
+    Array dis_source;           // P_w - Y_w + D_w
+    Array_2D vel_star;          // friction velocity u_tau at the first fluid layer [m/s]
+
+    double re_turb = 1.0;       // = vel_star_ref*z_0/nue, set by the closure
+    double abl_height = 20000.0; // boundary-layer height [m]
+
+    // THE gate; set once in Run() from ATURAN_TURB and turb_model together.
+    bool turb_active = false;
+
+    // Thickness of layer i in metres, and the index of the first fluid cell in a column. Uranus is
+    // an ice giant modelled as a spherical shell with no ground, so every column starts at i = 0 —
+    // the same answer ATSAT and ATNEPT give; only ATJUP has an obstacle.
+    double layer_thickness_m(int i){
+        if(i < 0 || i > im-2) return 0.0;
+        return (double)(m_layer_heights[i+1] - m_layer_heights[i]) * 1.0e3;
+    }
+    int surface_index(int, int) const { return 0; }
 
     // ---- What the SHARED BoundaryConditions.h asks of this model ----
     //

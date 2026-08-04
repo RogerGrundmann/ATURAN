@@ -22,6 +22,7 @@
     Config::FillDoubleWithElement(elem_uranus, "buoyancy", buoyancy);
     Config::FillDoubleWithElement(elem_uranus, "chemical_reaction", chemical_reaction);
     Config::FillDoubleWithElement(elem_uranus, "epsres", epsres);
+    Config::FillStringWithElement(elem_uranus, "turb_model", turb_model);
     Config::FillDoubleWithElement(elem_uranus, "L_atm", L_atm);
     Config::FillDoubleWithElement(elem_uranus, "tropopause_pole", tropopause_pole);
     Config::FillDoubleWithElement(elem_uranus, "tropopause_equator", tropopause_equator);

@@ -18,6 +18,7 @@
 #include "BC_Uran.h"
 #include "VelocityInitializerUran.h"
 #include "ConvectiveAdjustmentUran.h"
+#include "TurbulenceUran.h"
 #include "PressureSolver.h"
 
 using namespace std;
@@ -33,6 +34,30 @@ using namespace tinyxml2;
 //
 // Note the adiabat it compares against is g/cp_mix, so it reads the cp_mix corrected in 1992397 —
 // 1.0008 K/km rather than the 1.3620 the old mass weighting implied.
+// Turbulence closure (TurbulenceUran), the SHARED Turbulence<Planet> that ATSAT, ATJUP and ATNEPT
+// run. DEFAULT OFF; ATURAN_TURB=1 switches it on, and turb_model = "none" also disables it, so
+// BOTH have to allow it — on ATSAT those were once independent switches and only one of them
+// decided anything, which is worth not repeating.
+//
+// turb_model is a real configuration entry here (uranus/config_aturan.xml, default k_omega_SST,
+// with k_omega, k_epsilon and none kept as commented alternatives in param.py), which is how
+// ATSAT, ATJUP and ATOM do it; ATNEPT hard-codes the string instead. ATURAN_TURB_MODEL overrides
+// the config value at runtime without regenerating anything.
+//
+// STAGE ONE OF THREE. This fills nue* and the closure diagnostics from the velocity field. It does
+// NOT integrate k* and dis* — RungeKuttaUran predates the closure and has no stages for them — and
+// nue* reaches no momentum or scalar equation. With the knob ON it moves the diagnostic arrays and
+// nothing else; with it OFF it does not run.
+//
+// ATSAT's warning applies here and has NOT been checked on Uranus: ATSAT's `re` is 1000, which made
+// its eddy viscosity ~77x SMALLER than the molecular background — the opposite of ATJUP's situation
+// and the opposite of what ATJUP's comment claimed. ATURAN's `re` is 1000 too. The first thing to
+// do after switching this on is compare nue* against 1/re.
+static int turb_env_enabled(){
+    static const int v = [](){ const char* e = getenv("ATURAN_TURB"); return e ? atoi(e) : 0; }();
+    return v;
+}
+
 static int conv_adj_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_CONV_ADJ"); return e ? atoi(e) : 0; }();
     return v;
@@ -158,6 +183,13 @@ void cUranusModel::Run(){
     resetArrays();
 
     dt = 0.001;                                                         //  no dimension
+
+    // THE turbulence gate, resolved once. ATURAN_TURB and turb_model must BOTH allow it: on ATSAT
+    // these were two independent switches and only one of them decided anything, so a run with
+    // turb_model = "none" still ran the closure. Both are consulted here and the answer is a bool
+    // the rest of the run reads. ATURAN_TURB_MODEL overrides the configured string first.
+    if(const char* tm = getenv("ATURAN_TURB_MODEL")) turb_model = tm;
+    turb_active = (turb_env_enabled() != 0) && (turb_model != "none");
 
     init_layer_heights();
     TropopauseLocation();
@@ -391,6 +423,7 @@ void cUranusModel::Run(){
 
         // After the state has been advanced and the boundaries applied: put any
         // superadiabatic column back on the dry adiabat. Off by default (ATURAN_CONV_ADJ).
+        if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
 
         panorama_cnt++;
@@ -492,6 +525,20 @@ void cUranusModel::resetArrays(){
 
     p_dyn.initArray(im, jm, km, pa);                // dynamic pressure
     p_dynn.initArray(im, jm, km, pa);               // dynamic pressure, previous iteration
+
+    // Turbulence closure fields (stage one). Allocated unconditionally so the arrays exist for
+    // printMinMax and for the shared BC lists whether or not the closure runs; they stay zero
+    // while turb_active is false.
+    tke.initArray(im, jm, km, 0.0);
+    dis.initArray(im, jm, km, 0.0);
+    tken.initArray(im, jm, km, 0.0);
+    disn.initArray(im, jm, km, 0.0);
+    nue.initArray(im, jm, km, 0.0);
+    nue_t.initArray(im, jm, km, 0.0);
+    prod.initArray(im, jm, km, 0.0);
+    tke_source.initArray(im, jm, km, 0.0);
+    dis_source.initArray(im, jm, km, 0.0);
+    vel_star.initArray_2D(jm, km, 0.0);
     p_stat.initArray(im, jm, km, pa);                // static pressure
     rho_mix.initArray(im, jm, km, 0.0);             // local mixture density
 
