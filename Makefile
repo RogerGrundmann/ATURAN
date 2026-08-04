@@ -23,6 +23,14 @@ ATURAN_CLI_OBJ = cli/uran.o cli/DefaultStream.o
 PARAM_OUTPUTS = planet/cUranusDefaults.cpp.inc planet/UranusLoadConfig.cpp.inc \
 planet/UranusParams.h.inc uranus/config_aturan.xml python/uranus_pxd.pxi python/pyaturan.pyx
 
+# The extension module setup.py ACTUALLY writes. There is no python/pyaturan.so and never was:
+# `build_ext --inplace` produces the interpreter-versioned name, so naming the short one as a
+# target made that rule re-run on every single make, and left $(TARGET_DIR)/pyaturan.so below
+# depending on a file with no rule at all — which is why `make clean && make` failed outright
+# with "No rule to make target python/pyaturan.cpython-310-...so". Asking the interpreter for the
+# suffix keeps this working across Python versions instead of hard-coding 310.
+PY_EXT = python/pyaturan$(shell python3 -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')
+
 #copy pyaturan.so from python dir to uranus dir
 COPY_FILE = pyaturan.so
 TARGET_DIR = uranus
@@ -37,21 +45,31 @@ libaturan.a: $(PARAM_OUTPUTS) $(LIB_OBJ) $(ATURAN_OBJ) $(XML_OBJ)
 uran: libaturan.a $(ATURAN_CLI_OBJ)
 	$(CXX) $(CFLAGS) $(ATURAN_CLI_OBJ) -L. -laturan $(LDFLAGS) -o cli/uran
 
-$(PARAM_OUTPUTS): param.py
-# explicitly clean dependent files
-	rm -f planet/cUranusModel.o
+# ONE recipe, ONE run. param.py writes all six outputs in a single pass, so this is a GROUPED
+# target (&:, GNU make 4.3+). Written with a plain `:` it was six independent rules that happened
+# to share a recipe, and make ran param.py once per output — seven concurrent invocations were
+# visible in a -j8 log, all writing the same files.
+$(PARAM_OUTPUTS) &: param.py
 	python3 param.py
+
+# cUranusModel.h #includes UranusParams.h.inc, cUranusModel.cpp includes the other two, and that
+# header reaches every translation unit in ATURAN_OBJ and the CLI. So the generated files are a
+# genuine prerequisite of those objects and saying so is what makes a regenerated parameter set
+# actually take effect. This REPLACES the `rm -f planet/cUranusModel.o` that used to sit inside
+# the recipe above, which was wrong twice over: it named only one of the twelve objects that
+# include the header, and under -j it raced against the compile of that very object.
+$(ATURAN_OBJ) $(ATURAN_CLI_OBJ): $(PARAM_OUTPUTS)
 
 analyze:
 	analyze-build make
 
-python: libaturan.a python/pyaturan.so
+python: libaturan.a $(PY_EXT)
 
-python/pyaturan.so: python/pyaturan.pyx python/aturan.pxd libaturan.a
+$(PY_EXT): python/pyaturan.pyx python/aturan.pxd libaturan.a
 	cd python && python3 setup.py build_ext --inplace
 
-# copy pyaturan.so from python dir to uranus dir
-$(TARGET_DIR)/pyaturan.so: python/pyaturan.cpython-310-x86_64-linux-gnu.so
+# copy the extension module from python dir to uranus dir
+$(TARGET_DIR)/pyaturan.so: $(PY_EXT)
 	cp $< $@
 
 
