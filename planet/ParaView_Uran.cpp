@@ -26,16 +26,10 @@ void cUranusModel::paraview_panorama_vts(int n){
     // Header, coordinates, the Velocity array and the Temperature array are the
     // SHARED ParaViewWriter.h. What stays here is the field list below and the
     // scalars string that has to agree with it.
-    // Display scalings. NEITHER carries r_mix, and that is the settlement: the species arrays ARE
-    // densities in kg/m3, so multiplying by the mixture density again counted it twice — ATSAT
-    // 12397e3, ATNEPT 816931f, and it reached ATURAN's REPORT in 70b032a while these lists still
-    // applied it. What is left is a pure unit conversion, picked per field so nothing underflows
-    // the writer's precision(4) fixed format:
-    //   to_g   kg/m3 -> g/m3    species and their fluxes; h2o peaks at 0.0800 kg/m3 -> 80.00
-    //   to_mg  kg/m3 -> mg/m3   the NH4SH family only, which peaks at 7.42e-10 kg/m3 and would
-    //                           print as 0.0000 under to_g
-    const double to_g  = 1e3;
-    const double to_mg = 1e6;
+    // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
+    // NH4SH family in ug/m3 (1e9), thermalmassflux in W/m3 (1.0). These are the same units the
+    // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
+    // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ParaViewWriter<cUranusModel> pv(*this);
     ofstream Uranus_panorama_vts_File = pv.open_panorama(n,
         "Temperature PressureDynamic PressureStatic NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce Q_Latent Q_Sensible BuoyancyForce ");
@@ -49,30 +43,30 @@ void cUranusModel::paraview_panorama_vts(int n){
     dump_array("PressureStat", p_stat, 1.0, Uranus_panorama_vts_File);
     dump_array("rho_mix", rho_mix, 1.0, Uranus_panorama_vts_File);
 
-    dump_array("H2O", h2o, to_g, Uranus_panorama_vts_File);
-    dump_array("H2OCloud", h2o_cloud, to_g, Uranus_panorama_vts_File);
-    dump_array("H2OIce", h2o_ice, to_g, Uranus_panorama_vts_File);
+    dump_array("H2O", h2o, 1e3, Uranus_panorama_vts_File);
+    dump_array("H2OCloud", h2o_cloud, 1e3, Uranus_panorama_vts_File);
+    dump_array("H2OIce", h2o_ice, 1e3, Uranus_panorama_vts_File);
 
-    dump_array("CH4", ch4, to_g, Uranus_panorama_vts_File);
-    dump_array("CH4Cloud", ch4_cloud, to_g, Uranus_panorama_vts_File);
-    dump_array("CH4Ice", ch4_ice, to_g, Uranus_panorama_vts_File);
+    dump_array("CH4", ch4, 1e3, Uranus_panorama_vts_File);
+    dump_array("CH4Cloud", ch4_cloud, 1e3, Uranus_panorama_vts_File);
+    dump_array("CH4Ice", ch4_ice, 1e3, Uranus_panorama_vts_File);
 
-    dump_array("H2S", h2s, to_g, Uranus_panorama_vts_File);
-    dump_array("H2SCloud", h2s_cloud, to_g, Uranus_panorama_vts_File);
-    dump_array("H2SIce", h2s_ice, to_g, Uranus_panorama_vts_File);
-    dump_array("w_h2s", w_h2s, to_g, Uranus_panorama_vts_File);
-//    dump_array("j_h2s", j_h2s, to_g, Uranus_panorama_vts_File);
-//    dump_array("jT_h2s", jT_h2s, to_g, Uranus_panorama_vts_File);
+    dump_array("H2S", h2s, 1e3, Uranus_panorama_vts_File);
+    dump_array("H2SCloud", h2s_cloud, 1e3, Uranus_panorama_vts_File);
+    dump_array("H2SIce", h2s_ice, 1e3, Uranus_panorama_vts_File);
+    dump_array("w_h2s", w_h2s, 1e3, Uranus_panorama_vts_File);
+//    dump_array("j_h2s", j_h2s, 1e3, Uranus_panorama_vts_File);
+//    dump_array("jT_h2s", jT_h2s, 1e3, Uranus_panorama_vts_File);
 
-    dump_array("NH3", nh3, to_g, Uranus_panorama_vts_File);
-    dump_array("NH3Cloud", nh3_cloud, to_g, Uranus_panorama_vts_File);
-    dump_array("NH3Ice", nh3_ice, to_g, Uranus_panorama_vts_File);
-    dump_array("w_nh3", w_nh3, to_g, Uranus_panorama_vts_File);
-//    dump_array("j_nh3", j_nh3, to_g, Uranus_panorama_vts_File);
-//    dump_array("jT_nh3", jT_nh3, to_g, Uranus_panorama_vts_File);
+    dump_array("NH3", nh3, 1e3, Uranus_panorama_vts_File);
+    dump_array("NH3Cloud", nh3_cloud, 1e3, Uranus_panorama_vts_File);
+    dump_array("NH3Ice", nh3_ice, 1e3, Uranus_panorama_vts_File);
+    dump_array("w_nh3", w_nh3, 1e3, Uranus_panorama_vts_File);
+//    dump_array("j_nh3", j_nh3, 1e3, Uranus_panorama_vts_File);
+//    dump_array("jT_nh3", jT_nh3, 1e3, Uranus_panorama_vts_File);
 
-    dump_array("NH4SH", nh4sh, to_mg, Uranus_panorama_vts_File);
-    dump_array("w_nh4sh", w_nh4sh, to_mg, Uranus_panorama_vts_File);
+    dump_array("NH4SH", nh4sh, 1e9, Uranus_panorama_vts_File);
+    dump_array("w_nh4sh", w_nh4sh, 1e9, Uranus_panorama_vts_File);
 
 //    dump_array("Q_Latent", Q_Latent, 1.0, Uranus_panorama_vts_File);
 //    dump_array("Q_Sensible", Q_Sensible, 1.0, Uranus_panorama_vts_File);
@@ -86,16 +80,10 @@ void cUranusModel::paraview_panorama_vts(int n){
 void cUranusModel::paraview_vtk_radial(int n, int i_radial){
     using namespace ParaViewIO;
     // File name, header, DIMENSIONS/POINTS and the coordinate block are the shared writer.
-    // Display scalings. NEITHER carries r_mix, and that is the settlement: the species arrays ARE
-    // densities in kg/m3, so multiplying by the mixture density again counted it twice — ATSAT
-    // 12397e3, ATNEPT 816931f, and it reached ATURAN's REPORT in 70b032a while these lists still
-    // applied it. What is left is a pure unit conversion, picked per field so nothing underflows
-    // the writer's precision(4) fixed format:
-    //   to_g   kg/m3 -> g/m3    species and their fluxes; h2o peaks at 0.0800 kg/m3 -> 80.00
-    //   to_mg  kg/m3 -> mg/m3   the NH4SH family only, which peaks at 7.42e-10 kg/m3 and would
-    //                           print as 0.0000 under to_g
-    const double to_g  = 1e3;
-    const double to_mg = 1e6;
+    // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
+    // NH4SH family in ug/m3 (1e9), thermalmassflux in W/m3 (1.0). These are the same units the
+    // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
+    // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ofstream Uranus_vtk_radial_File = ParaViewWriter<cUranusModel>(*this)
         .open_slice("radial", "Radial", i_radial, n, km, jm, 0.1, false);
     const double z = 0.0;   // out-of-plane component of the in-plane vector below
@@ -112,38 +100,38 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
 
     dump_radial("thermalmassflux", thermalmassflux, 1.0, i_radial, Uranus_vtk_radial_File);
 
-    dump_radial("H2O", h2o, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("H2OCloud", h2o_cloud, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("H2OIce", h2o_ice, to_g, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2O", h2o, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2OCloud", h2o_cloud, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2OIce", h2o_ice, 1e3, i_radial, Uranus_vtk_radial_File);
 
-    dump_radial("CH4", ch4, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("CH4Cloud", ch4_cloud, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("CH4Ice", ch4_ice, to_g, i_radial, Uranus_vtk_radial_File);
+    dump_radial("CH4", ch4, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("CH4Cloud", ch4_cloud, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("CH4Ice", ch4_ice, 1e3, i_radial, Uranus_vtk_radial_File);
 
-    dump_radial("H2S", h2s, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("H2SCloud", h2s_cloud, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("H2SIce", h2s_ice, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("w_h2s", w_h2s, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("j_h2s", j_h2s, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("jT_h2s", jT_h2s, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("massflux_h2s", massflux_h2s, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("difflux_h2s", difflux_h2s, to_g, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2S", h2s, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2SCloud", h2s_cloud, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("H2SIce", h2s_ice, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("w_h2s", w_h2s, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("j_h2s", j_h2s, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("jT_h2s", jT_h2s, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("massflux_h2s", massflux_h2s, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("difflux_h2s", difflux_h2s, 1e3, i_radial, Uranus_vtk_radial_File);
 
-    dump_radial("NH3", nh3, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("NH3Cloud", nh3_cloud, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("NH3Ice", nh3_ice, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("w_nh3", w_nh3, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("j_nh3", j_nh3, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("jT_nh3", jT_nh3, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("massflux_nh3", massflux_nh3, to_g, i_radial, Uranus_vtk_radial_File);
-    dump_radial("difflux_nh3", difflux_nh3, to_g, i_radial, Uranus_vtk_radial_File);
+    dump_radial("NH3", nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("NH3Cloud", nh3_cloud, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("NH3Ice", nh3_ice, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("w_nh3", w_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("j_nh3", j_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("jT_nh3", jT_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("massflux_nh3", massflux_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+    dump_radial("difflux_nh3", difflux_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
 
-    dump_radial("NH4SH", nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
-    dump_radial("w_nh4sh", w_nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
-    dump_radial("massflux_nh4sh", massflux_nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
-    dump_radial("j_nh4sh", j_nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
-    dump_radial("jT_nh4sh", jT_nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
-    dump_radial("difflux_nh4sh", difflux_nh4sh, to_mg, i_radial, Uranus_vtk_radial_File);
+    dump_radial("NH4SH", nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
+    dump_radial("w_nh4sh", w_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
+    dump_radial("massflux_nh4sh", massflux_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
+    dump_radial("j_nh4sh", j_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
+    dump_radial("jT_nh4sh", jT_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
+    dump_radial("difflux_nh4sh", difflux_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
 
 
     dump_radial("PressureDyn", p_dyn, 1e3, i_radial, Uranus_vtk_radial_File);
@@ -173,16 +161,10 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
 void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
     using namespace ParaViewIO;
     // File name, header, DIMENSIONS/POINTS and the coordinate block are the shared writer.
-    // Display scalings. NEITHER carries r_mix, and that is the settlement: the species arrays ARE
-    // densities in kg/m3, so multiplying by the mixture density again counted it twice — ATSAT
-    // 12397e3, ATNEPT 816931f, and it reached ATURAN's REPORT in 70b032a while these lists still
-    // applied it. What is left is a pure unit conversion, picked per field so nothing underflows
-    // the writer's precision(4) fixed format:
-    //   to_g   kg/m3 -> g/m3    species and their fluxes; h2o peaks at 0.0800 kg/m3 -> 80.00
-    //   to_mg  kg/m3 -> mg/m3   the NH4SH family only, which peaks at 7.42e-10 kg/m3 and would
-    //                           print as 0.0000 under to_g
-    const double to_g  = 1e3;
-    const double to_mg = 1e6;
+    // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
+    // NH4SH family in ug/m3 (1e9), thermalmassflux in W/m3 (1.0). These are the same units the
+    // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
+    // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ofstream Uranus_vtk_zonal_File = ParaViewWriter<cUranusModel>(*this)
         .open_slice("zonal", "Zonal", k_zonal, n, jm, im, 0.05, false);
     const double z = 0.0;   // out-of-plane component of the in-plane vector below
@@ -202,38 +184,38 @@ void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
 
     dump_zonal("height", aux, 1.0, k_zonal, Uranus_vtk_zonal_File);
 
-    dump_zonal("H2O", h2o, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("H2OCloud", h2o_cloud, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("H2OIce", h2o_ice, to_g, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2O", h2o, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2OCloud", h2o_cloud, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2OIce", h2o_ice, 1e3, k_zonal, Uranus_vtk_zonal_File);
 
-    dump_zonal("CH4", ch4, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("CH4Cloud", ch4_cloud, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("CH4Ice", ch4_ice, to_g, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("CH4", ch4, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("CH4Cloud", ch4_cloud, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("CH4Ice", ch4_ice, 1e3, k_zonal, Uranus_vtk_zonal_File);
 
-    dump_zonal("H2S", h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("H2SCloud", h2s_cloud, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("H2SIce", h2s_ice, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("w_h2s", w_h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("j_h2s", j_h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("jT_h2s", jT_h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("massflux_h2s", massflux_h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("difflux_h2s", difflux_h2s, to_g, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2S", h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2SCloud", h2s_cloud, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("H2SIce", h2s_ice, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("w_h2s", w_h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("j_h2s", j_h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("jT_h2s", jT_h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("massflux_h2s", massflux_h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("difflux_h2s", difflux_h2s, 1e3, k_zonal, Uranus_vtk_zonal_File);
 
-    dump_zonal("NH3", nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("NH3Cloud", nh3_cloud, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("NH3Ice", nh3_ice, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("w_nh3", w_nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("j_nh3", j_nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("jT_nh3", jT_nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("massflux_nh3", massflux_nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("difflux_nh3", difflux_nh3, to_g, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("NH3", nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("NH3Cloud", nh3_cloud, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("NH3Ice", nh3_ice, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("w_nh3", w_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("j_nh3", j_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("jT_nh3", jT_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("massflux_nh3", massflux_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("difflux_nh3", difflux_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
 
-    dump_zonal("NH4SH", nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("w_nh4sh", w_nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("massflux_nh4sh", massflux_nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("j_nh4sh", j_nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("jT_nh4sh", jT_nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
-    dump_zonal("difflux_nh4sh", difflux_nh4sh, to_mg, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("NH4SH", nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("w_nh4sh", w_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("massflux_nh4sh", massflux_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("j_nh4sh", j_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("jT_nh4sh", jT_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("difflux_nh4sh", difflux_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
 
     dump_zonal("PressureDyn", p_dyn, 1e3, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("PressureStat", p_stat, 1.0, k_zonal, Uranus_vtk_zonal_File);
@@ -262,16 +244,10 @@ void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
 void cUranusModel::paraview_vtk_longal(int n, int j_longal){
     using namespace ParaViewIO;
     // File name, header, DIMENSIONS/POINTS and the coordinate block are the shared writer.
-    // Display scalings. NEITHER carries r_mix, and that is the settlement: the species arrays ARE
-    // densities in kg/m3, so multiplying by the mixture density again counted it twice — ATSAT
-    // 12397e3, ATNEPT 816931f, and it reached ATURAN's REPORT in 70b032a while these lists still
-    // applied it. What is left is a pure unit conversion, picked per field so nothing underflows
-    // the writer's precision(4) fixed format:
-    //   to_g   kg/m3 -> g/m3    species and their fluxes; h2o peaks at 0.0800 kg/m3 -> 80.00
-    //   to_mg  kg/m3 -> mg/m3   the NH4SH family only, which peaks at 7.42e-10 kg/m3 and would
-    //                           print as 0.0000 under to_g
-    const double to_g  = 1e3;
-    const double to_mg = 1e6;
+    // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
+    // NH4SH family in ug/m3 (1e9), thermalmassflux in W/m3 (1.0). These are the same units the
+    // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
+    // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ofstream Uranus_vtk_longal_File = ParaViewWriter<cUranusModel>(*this)
         .open_slice("longal", "Longitudinal", j_longal, n, km, im, 0.025, true);
     const double y = 0.0;   // out-of-plane component of the in-plane vector below
@@ -292,38 +268,38 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
 
     dump_longal("height", aux, 1.0, j_longal, Uranus_vtk_longal_File);
 
-    dump_longal("H2O", h2o, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("H2OCloud", h2o_cloud, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("H2OIce", h2o_ice, to_g, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2O", h2o, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2OCloud", h2o_cloud, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2OIce", h2o_ice, 1e3, j_longal, Uranus_vtk_longal_File);
 
-    dump_longal("CH4", ch4, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("CH4Cloud", ch4_cloud, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("CH4Ice", ch4_ice, to_g, j_longal, Uranus_vtk_longal_File);
+    dump_longal("CH4", ch4, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("CH4Cloud", ch4_cloud, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("CH4Ice", ch4_ice, 1e3, j_longal, Uranus_vtk_longal_File);
 
-    dump_longal("H2S", h2s, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("H2SCloud", h2s_cloud, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("H2SIce", h2s_ice, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("w_h2s", w_h2s, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("j_h2s", j_h2s, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("jT_h2s", jT_h2s, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("massflux_h2s", massflux_h2s, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("difflux_h2s", difflux_h2s, to_g, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2S", h2s, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2SCloud", h2s_cloud, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("H2SIce", h2s_ice, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("w_h2s", w_h2s, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("j_h2s", j_h2s, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("jT_h2s", jT_h2s, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("massflux_h2s", massflux_h2s, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("difflux_h2s", difflux_h2s, 1e3, j_longal, Uranus_vtk_longal_File);
 
-    dump_longal("NH3", nh3, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("NH3Cloud", nh3_cloud, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("NH3Ice", nh3_ice, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("w_nh3", w_nh3, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("j_nh3", j_nh3, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("jT_nh3", jT_nh3, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("massflux_nh3", massflux_nh3, to_g, j_longal, Uranus_vtk_longal_File);
-    dump_longal("difflux_nh3", difflux_nh3, to_g, j_longal, Uranus_vtk_longal_File);
+    dump_longal("NH3", nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("NH3Cloud", nh3_cloud, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("NH3Ice", nh3_ice, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("w_nh3", w_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("j_nh3", j_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("jT_nh3", jT_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("massflux_nh3", massflux_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+    dump_longal("difflux_nh3", difflux_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
 
-    dump_longal("NH4SH", nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
-    dump_longal("w_nh4sh", w_nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
-    dump_longal("massflux_nh4sh", massflux_nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
-    dump_longal("j_nh4sh", j_nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
-    dump_longal("jT_nh4sh", jT_nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
-    dump_longal("difflux_nh4sh", difflux_nh4sh, to_mg, j_longal, Uranus_vtk_longal_File);
+    dump_longal("NH4SH", nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
+    dump_longal("w_nh4sh", w_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
+    dump_longal("massflux_nh4sh", massflux_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
+    dump_longal("j_nh4sh", j_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
+    dump_longal("jT_nh4sh", jT_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
+    dump_longal("difflux_nh4sh", difflux_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
 
 
     dump_longal("PressureDyn", p_dyn, 1e3, j_longal, Uranus_vtk_longal_File);
@@ -354,16 +330,10 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
 void cUranusModel::paraview_sphere_vts(int n){
     using namespace ParaViewIO;
     double x, y, z, sinthe, sinphi, costhe, cosphi;
-    // Display scalings. NEITHER carries r_mix, and that is the settlement: the species arrays ARE
-    // densities in kg/m3, so multiplying by the mixture density again counted it twice — ATSAT
-    // 12397e3, ATNEPT 816931f, and it reached ATURAN's REPORT in 70b032a while these lists still
-    // applied it. What is left is a pure unit conversion, picked per field so nothing underflows
-    // the writer's precision(4) fixed format:
-    //   to_g   kg/m3 -> g/m3    species and their fluxes; h2o peaks at 0.0800 kg/m3 -> 80.00
-    //   to_mg  kg/m3 -> mg/m3   the NH4SH family only, which peaks at 7.42e-10 kg/m3 and would
-    //                           print as 0.0000 under to_g
-    const double to_g  = 1e3;
-    const double to_mg = 1e6;
+    // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
+    // NH4SH family in ug/m3 (1e9), thermalmassflux in W/m3 (1.0). These are the same units the
+    // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
+    // See the note above the species block in Reporting.h for why NH4SH needs its own.
     string Uranus_sphere_vts_File_Name = output_path + "/Uranus_sphere_" 
         + std::to_string(n) + ".vts";
     ofstream Uranus_sphere_vts_File;
@@ -440,7 +410,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2o.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2o.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -452,7 +422,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2s.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2s.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -464,7 +434,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * nh3.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * nh3.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -476,7 +446,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_mg * nh4sh.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e9 * nh4sh.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -488,7 +458,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2o_cloud.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2o_cloud.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -501,7 +471,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2s_cloud.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2s_cloud.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -514,7 +484,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * nh3_cloud.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * nh3_cloud.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -541,7 +511,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2o_ice.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2o_ice.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -554,7 +524,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * h2s_ice.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * h2s_ice.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -567,7 +537,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << to_g * nh3_ice.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << 1e3 * nh3_ice.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }

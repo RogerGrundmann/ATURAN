@@ -176,45 +176,68 @@ public:
         searchMinMax_3D(" max 3D pressure static ", " min 3D pressure static ", " bar", m.p_stat, 1.0);
         std::cout << std::endl;
 
+        // ---- DISPLAY UNITS, settled across all four models 2026-08-04 ----
+        //
+        // One unit per quantity, used by this report AND by every model's ParaView field lists,
+        // so an array name means the same thing wherever it is read. Before this the four writers
+        // disagreed with each other and with this table: ATJUP and ATNEPT passed 1.0 (kg/m3) for
+        // the species while ATSAT and ATURAN passed 1e3 (g/m3), and NH4SH was 1e3 in ATSAT and
+        // 1e6 in the other three.
+        //
+        //     species, clouds, ices and their fluxes   1e3   g/m3, g/(m3s), g/m4
+        //     the NH4SH family                         1e9   ug/m3, ug/(m3s), ug/m4
+        //     thermalmassflux                          1.0   W/m3   (a heating rate, not a species)
+        //
+        // THE UNITS ARE CHOSEN SO EVERY MODEL IS LEGIBLE UNDER THE WRITER'S precision(4) FIXED
+        // FORMAT, which is the real constraint. Measured maxima at the time of the settlement:
+        //
+        //     h2o   [g/m3]   ATNEPT 18.76   ATURAN 80.00   ATSAT 90.00   ATJUP 90.86
+        //     nh4sh [ug/m3]  ATNEPT  0.034  ATURAN  1.512  ATJUP 6730.5  ATSAT 4764984.6
+        //
+        // NH4SH spans EIGHT ORDERS OF MAGNITUDE across the four, which is why it needs a unit of
+        // its own: at the species' 1e3 it would print 0.0000 on Neptune and Uranus both, and at
+        // the 1e6 this table used before, Neptune's still did. ug/m3 is the first unit that keeps
+        // all four non-zero. If a fifth planet ever breaks that, the answer is the writer's
+        // precision, not another unit.
         std::cout << std::endl << " Water " << std::endl;
-        searchMinMax_3D(" max 3D h2o ",  " min 3D h2o ", " kg/m3", m.h2o, 1.0);
-        searchMinMax_3D(" max 3D h2o_cloud ", " min 3D h2o_cloud ", " kg/m3", m.h2o_cloud, 1.0);
-        searchMinMax_3D(" max 3D h2o_ice ", " min 3D h2o_ice ", " kg/m3", m.h2o_ice, 1.0);
+        searchMinMax_3D(" max 3D h2o ",  " min 3D h2o ", " g/m3", m.h2o, 1e3);
+        searchMinMax_3D(" max 3D h2o_cloud ", " min 3D h2o_cloud ", " g/m3", m.h2o_cloud, 1e3);
+        searchMinMax_3D(" max 3D h2o_ice ", " min 3D h2o_ice ", " g/m3", m.h2o_ice, 1e3);
         std::cout << std::endl;
 
         std::cout << std::endl << " Methane " << std::endl;
-        searchMinMax_3D(" max 3D ch4 ",  " min 3D ch4 ", " kg/m3", m.ch4, 1.0);
-        searchMinMax_3D(" max 3D ch4_cloud ", " min 3D ch4_cloud ", " kg/m3", m.ch4_cloud, 1.0);
-        searchMinMax_3D(" max 3D ch4_ice ", " min 3D ch4_ice ", " kg/m3", m.ch4_ice, 1.0);
+        searchMinMax_3D(" max 3D ch4 ",  " min 3D ch4 ", " g/m3", m.ch4, 1e3);
+        searchMinMax_3D(" max 3D ch4_cloud ", " min 3D ch4_cloud ", " g/m3", m.ch4_cloud, 1e3);
+        searchMinMax_3D(" max 3D ch4_ice ", " min 3D ch4_ice ", " g/m3", m.ch4_ice, 1e3);
         std::cout << std::endl;
 
         std::cout << std::endl << " Hydrogen Sulfide " << std::endl;
-        searchMinMax_3D(" max 3D h2s ",  " min 3D h2s ", " kg/m3", m.h2s, 1.0);
-        searchMinMax_3D(" max 3D w_h2s ", " min 3D w_h2s ", " kg/(m3s)", m.w_h2s, 1.0);
-        searchMinMax_3D(" max 3D j_h2s ", " min 3D j_h2s ", " kg/m4", m.j_h2s, 1.0);
-        searchMinMax_3D(" max 3D jT_h2s ", " min 3D jT_h2s ", " kg/m4", m.jT_h2s, 1.0);
-        searchMinMax_3D(" max 3D massflux_h2s ", " min 3D massflux_h2s ", " kg/(m3s)", m.massflux_h2s, 1.0);
-        searchMinMax_3D(" max 3D diff_h2s ", " min 3D diff_h2s ", " kg/(m3s)", m.difflux_h2s, 1.0);
+        searchMinMax_3D(" max 3D h2s ",  " min 3D h2s ", " g/m3", m.h2s, 1e3);
+        searchMinMax_3D(" max 3D w_h2s ", " min 3D w_h2s ", " g/(m3s)", m.w_h2s, 1e3);
+        searchMinMax_3D(" max 3D j_h2s ", " min 3D j_h2s ", " g/m4", m.j_h2s, 1e3);
+        searchMinMax_3D(" max 3D jT_h2s ", " min 3D jT_h2s ", " g/m4", m.jT_h2s, 1e3);
+        searchMinMax_3D(" max 3D massflux_h2s ", " min 3D massflux_h2s ", " g/(m3s)", m.massflux_h2s, 1e3);
+        searchMinMax_3D(" max 3D diff_h2s ", " min 3D diff_h2s ", " g/(m3s)", m.difflux_h2s, 1e3);
         std::cout << std::endl;
 
         std::cout << std::endl << " Ammonia " << std::endl;
-        searchMinMax_3D(" max 3D nh3 ",  " min 3D nh3 ", " kg/m3", m.nh3, 1.0);
-        searchMinMax_3D(" max 3D nh3_cloud ", " min 3D nh3_cloud ", " kg/m3", m.nh3_cloud, 1.0);
-        searchMinMax_3D(" max 3D nh3_ice ", " min 3D nh3_ice ", " kg/m3", m.nh3_ice, 1.0);
-        searchMinMax_3D(" max 3D w_nh3 ", " min 3D w_nh3 ", " kg/(m3s)", m.w_nh3, 1.0);
-        searchMinMax_3D(" max 3D j_nh3 ", " min 3D j_nh3 ", " kg/m4", m.j_nh3, 1.0);
-        searchMinMax_3D(" max 3D jT_nh3 ", " min 3D jT_nh3 ", " kg/m4", m.jT_nh3, 1.0);
-        searchMinMax_3D(" max 3D massflux_nh3 ", " min 3D massflux_nh3 ", " kg/(m3s)", m.massflux_nh3, 1.0);
-        searchMinMax_3D(" max 3D diff_nh3 ", " min 3D diff_nh3 ", " kg/(m3s)", m.difflux_nh3, 1.0);
+        searchMinMax_3D(" max 3D nh3 ",  " min 3D nh3 ", " g/m3", m.nh3, 1e3);
+        searchMinMax_3D(" max 3D nh3_cloud ", " min 3D nh3_cloud ", " g/m3", m.nh3_cloud, 1e3);
+        searchMinMax_3D(" max 3D nh3_ice ", " min 3D nh3_ice ", " g/m3", m.nh3_ice, 1e3);
+        searchMinMax_3D(" max 3D w_nh3 ", " min 3D w_nh3 ", " g/(m3s)", m.w_nh3, 1e3);
+        searchMinMax_3D(" max 3D j_nh3 ", " min 3D j_nh3 ", " g/m4", m.j_nh3, 1e3);
+        searchMinMax_3D(" max 3D jT_nh3 ", " min 3D jT_nh3 ", " g/m4", m.jT_nh3, 1e3);
+        searchMinMax_3D(" max 3D massflux_nh3 ", " min 3D massflux_nh3 ", " g/(m3s)", m.massflux_nh3, 1e3);
+        searchMinMax_3D(" max 3D diff_nh3 ", " min 3D diff_nh3 ", " g/(m3s)", m.difflux_nh3, 1e3);
         std::cout << std::endl;
 
         std::cout << std::endl << " Ammonia Hydrosulfide " << std::endl;
-        searchMinMax_3D(" max 3D nh4sh ",  " min 3D nh4sh ", " mg/m3", m.nh4sh, 1e6);
-        searchMinMax_3D(" max 3D w_nh4sh ", " min 3D w_nh4sh ", " mg/(m3s)", m.w_nh4sh, 1e6);
-        searchMinMax_3D(" max 3D j_nh4sh ", " min 3D j_nh4sh ", " mg/m4", m.j_nh4sh, 1e6);
-        searchMinMax_3D(" max 3D jT_nh4sh ", " min 3D jT_nh4sh ", " mg/m4", m.jT_nh4sh, 1e6);
-        searchMinMax_3D(" max 3D massflux_nh4sh ", " min 3D massflux_nh4sh ", " mg/(m3s)", m.massflux_nh4sh, 1e6);
-        searchMinMax_3D(" max 3D diff_nh4sh ", " min 3D diff_nh4sh ", " mg/(m3s)", m.difflux_nh4sh, 1e6);
+        searchMinMax_3D(" max 3D nh4sh ",  " min 3D nh4sh ", " ug/m3", m.nh4sh, 1e9);
+        searchMinMax_3D(" max 3D w_nh4sh ", " min 3D w_nh4sh ", " ug/(m3s)", m.w_nh4sh, 1e9);
+        searchMinMax_3D(" max 3D j_nh4sh ", " min 3D j_nh4sh ", " ug/m4", m.j_nh4sh, 1e9);
+        searchMinMax_3D(" max 3D jT_nh4sh ", " min 3D jT_nh4sh ", " ug/m4", m.jT_nh4sh, 1e9);
+        searchMinMax_3D(" max 3D massflux_nh4sh ", " min 3D massflux_nh4sh ", " ug/(m3s)", m.massflux_nh4sh, 1e9);
+        searchMinMax_3D(" max 3D diff_nh4sh ", " min 3D diff_nh4sh ", " ug/(m3s)", m.difflux_nh4sh, 1e9);
         std::cout << std::endl;
 
         std::cout << std::endl << " Forces " << std::endl;
