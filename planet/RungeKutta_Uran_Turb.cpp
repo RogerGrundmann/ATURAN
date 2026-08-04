@@ -31,8 +31,10 @@ void cUranusModel::RungeKuttaUran(){
     const double tke_max_nd = 1000.0 / (u_0 * u_0);   // 1000 m2/s2
     constexpr double dis_min_nd = 1.0e-10;            // matches the closure's dis_min
 
-    const double t_min = 0.1;   // ~7.6 K physical (prevents buoyancy blow-up)
-    const double t_max = 10.0;  // ~760 K physical
+    // Physical bounds, divided by t_ref here rather than written as nondimensional literals.
+    // See cUranusModel.h for why, and for what the model actually reaches.
+    const double t_min = t_min_K() / t_ref;
+    const double t_max = t_max_K() / t_ref;
 
     /*
      * FOUR BARRIER-SEPARATED STAGES, which is the whole point of this file.

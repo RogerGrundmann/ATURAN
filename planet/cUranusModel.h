@@ -80,6 +80,29 @@ public:
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
 
+    /*
+     * ---- Integrator temperature bounds, as PHYSICAL constants ----
+     *
+     * These were bare literals in RungeKutta_Uran_Turb.cpp — t_min = 0.1, t_max = 10.0,
+     * NONDIMENSIONAL — carrying the comments "7.6 K physical" and "760 K physical". Those comments
+     * were written against a different t_ref and were wrong here by a hair and a mile
+     * respectively: ATURAN's t_ref is 76.4, so they meant 7.64 K and 764.0 K. Stated in kelvin and
+     * divided by t_ref at the point of use, the number means the same thing whatever t_ref is and
+     * cannot go stale when it changes. This is ATNEPT's 44dde95 applied to ATURAN, the last model
+     * still carrying the literals.
+     *
+     * NEITHER BOUND IS A PHYSICAL CLAIM — both are numerical guards, and both are set clear of what
+     * this model actually constructs. init_temperature builds a deep equator of 421.0 K and the
+     * integrator reaches 411.8 K at two iterations, against a column minimum of 63.1 K. The old
+     * 764 K ceiling was never engaged (1df1aea had to withdraw a guess that it was), and 2000 K
+     * keeps it that way with room to spare; 7.5 K sits an order of magnitude below anything the
+     * model produces while still catching a sign error before the buoyancy denominator does.
+     *
+     * If the initial profile is wrong, these constants should not be the thing hiding it.
+     */
+    static double t_min_K(){ return 7.5;    }   // floor; prevents a buoyancy blow-up
+    static double t_max_K(){ return 2000.0; }   // ceiling; well clear of the 421 K init_temperature builds
+
     // ---- RK4 stage accumulators, for the separated integrator ----
     //
     // The running sum k1 + 2k2 + 2k3 + k4 needs a place to live once the four stages stop sharing
