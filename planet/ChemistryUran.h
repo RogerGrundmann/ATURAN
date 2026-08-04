@@ -327,18 +327,47 @@ public:
 
         double M_mix = m.r_mix/m.c_mix;
 
-        m.cp_mix  = m.r_h2/m.m_h2 * m.cp_h2 + m.r_h2s/m.m_h2s * m.cp_h2s
-            + m.r_he/m.m_he * m.cp_he + m.r_nh3/m.m_nh3 * m.cp_nh3
-            + m.r_nh4sh/m.m_nh4sh * m.cp_nh4sh
-            + m.r_h2o/m.m_h2o * m.cp_h2o + m.r_ch4/m.m_ch4 * m.cp_ch4;
-        m.mue_mix = m.r_h2/m.m_h2 * m.mue_h2 + m.r_h2s/m.m_h2s * m.mue_h2s
-            + m.r_he/m.m_he * m.mue_he + m.r_nh3/m.m_nh3 * m.mue_nh3
-            + m.r_nh4sh/m.m_nh4sh * m.mue_nh4sh + m.r_h2o/m.m_h2o * m.mue_h2o
-            + m.r_ch4/m.m_ch4 * m.mue_ch4;
-        m.k_mix   = m.r_h2/m.m_h2 * m.k_h2 + m.r_h2s/m.m_h2s * m.k_h2s
-            + m.r_he/m.m_he * m.k_he + m.r_nh3/m.m_nh3 * m.k_nh3
-            + m.r_nh4sh/m.m_nh4sh * m.k_nh4sh + m.r_h2o/m.m_h2o * m.k_h2o
-            + m.r_ch4/m.m_ch4 * m.k_ch4;
+        // MASS-FRACTION WEIGHTING, which is ATJUP's form (ChemistryJup.h:441) and was not ATURAN's.
+        //
+        // These three are per-unit-MASS properties, so a mixture value is sum(mass fraction * x),
+        // i.e. sum(r_x * X_x) / r_mix. What stood here divided each species by its OWN MOLAR MASS
+        // instead of by the mixture density: sum(r_x/m_x * X_x). Those weights are mole densities
+        // and they sum to c_mix = 0.4934 kmol/m3, not to 1, so the result was neither a mass
+        // average nor a molar one — and every species heavier than H2 was suppressed by the ratio
+        // m_x/r_mix, which for CH4 is a factor of 9.6.
+        //
+        // THIS IS A DEFECT AND NOT A MODELLING CHOICE, on the routine's own evidence. R_mix below
+        // is already normalised by the density sum, so the two lines disagreed with each other;
+        // and for an ideal gas cp - cv = R, which makes the old cp_mix say
+        //     gamma = cp/(cp - R_mix) = 6380.32/(6380.32 - 2447.84) = 1.6224
+        // for an atmosphere that is 51.5 % H2 by mass — essentially the monatomic 5/3. A
+        // H2-dominated atmosphere should be near 1.4; the corrected value gives 1.3923.
+        //
+        // ON URANUS THIS MOVES THE INITIAL PROFILE, because gam is not a config constant here:
+        // cUranusModel.cpp:142 computes gam = g*1e3/cp_mix immediately before init_temperature,
+        // and init_temperature builds T_bottom = T_top + gam*L_atm. Uranus shares Neptune's
+        // mixture exactly (r_mix = 1.677), so cp_mix is the same number; only g = 8.69 and
+        // L_atm = 360 km differ:
+        //     cp_mix        6380.3192059532 -> 8683.24... J/(kg K)   +36.1 %
+        //     gam           1.3620 -> 1.0008 K/km
+        //     deep equator   551.0 ->  421.0 K   (T_top 60.65 K + gam*360 km)
+        //
+        // ATURAN IS OTHERWISE UNTOUCHED and still sits at its initial fork: none of the eleven
+        // shared physics headers have reached it. This fix is applied here only because the
+        // defect is in ATURAN's own chemistry file and is independent of that port.
+        // ATSAT and ATNEPT carry the same defect and are fixed alongside.
+        m.cp_mix  = (m.r_h2 * m.cp_h2 + m.r_h2s * m.cp_h2s
+                  +  m.r_he * m.cp_he + m.r_nh3 * m.cp_nh3
+                  +  m.r_nh4sh * m.cp_nh4sh + m.r_h2o * m.cp_h2o
+                  +  m.r_ch4 * m.cp_ch4) / m.r_mix;
+        m.mue_mix = (m.r_h2 * m.mue_h2 + m.r_h2s * m.mue_h2s
+                  +  m.r_he * m.mue_he + m.r_nh3 * m.mue_nh3
+                  +  m.r_nh4sh * m.mue_nh4sh + m.r_h2o * m.mue_h2o
+                  +  m.r_ch4 * m.mue_ch4) / m.r_mix;
+        m.k_mix   = (m.r_h2 * m.k_h2 + m.r_h2s * m.k_h2s
+                  +  m.r_he * m.k_he + m.r_nh3 * m.k_nh3
+                  +  m.r_nh4sh * m.k_nh4sh + m.r_h2o * m.k_h2o
+                  +  m.r_ch4 * m.k_ch4) / m.r_mix;
         m.R_mix   = (m.r_h2 * m.R_h2 + m.r_he * m.R_he + m.r_h2o * m.R_h2o
             + m.r_h2s * m.R_h2s + m.r_nh3 * m.R_nh3 + m.r_nh4sh * m.R_nh4sh
             + m.r_ch4 * m.R_ch4)
