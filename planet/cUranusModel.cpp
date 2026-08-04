@@ -529,6 +529,25 @@ void cUranusModel::resetArrays(){
     // Turbulence closure fields (stage one). Allocated unconditionally so the arrays exist for
     // printMinMax and for the shared BC lists whether or not the closure runs; they stay zero
     // while turb_active is false.
+    // RK4 stage accumulators for the separated integrator.
+    acc_t.initArray(im, jm, km, 0.0);
+    acc_u.initArray(im, jm, km, 0.0);
+    acc_v.initArray(im, jm, km, 0.0);
+    acc_w.initArray(im, jm, km, 0.0);
+    acc_ch4.initArray(im, jm, km, 0.0);
+    acc_ch4_cloud.initArray(im, jm, km, 0.0);
+    acc_ch4_ice.initArray(im, jm, km, 0.0);
+    acc_h2o.initArray(im, jm, km, 0.0);
+    acc_h2o_cloud.initArray(im, jm, km, 0.0);
+    acc_h2o_ice.initArray(im, jm, km, 0.0);
+    acc_h2s.initArray(im, jm, km, 0.0);
+    acc_h2s_cloud.initArray(im, jm, km, 0.0);
+    acc_h2s_ice.initArray(im, jm, km, 0.0);
+    acc_nh3.initArray(im, jm, km, 0.0);
+    acc_nh3_cloud.initArray(im, jm, km, 0.0);
+    acc_nh3_ice.initArray(im, jm, km, 0.0);
+    acc_nh4sh.initArray(im, jm, km, 0.0);
+
     tke.initArray(im, jm, km, 0.0);
     dis.initArray(im, jm, km, 0.0);
     tken.initArray(im, jm, km, 0.0);
