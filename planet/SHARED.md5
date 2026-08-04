@@ -1,0 +1,29 @@
+# Checksums of the SHARED headers — files that must be BYTE-IDENTICAL in every planet model
+# (ATJUP, ATSAT, ATNEPT, and ATURAN as they arrive here).
+#
+# There is no submodule and no symlink holding them together: symlinks are not safe here, because
+# Synology Drive has silently reverted a working tree once already, and a submodule costs
+# workflow friction on every clone. So the copies are plain files and THIS manifest is what makes
+# a divergence loud instead of silent. `make check-shared` verifies it.
+#
+# Editing a shared header means: edit it in one repo, copy it to the others, regenerate this
+# manifest in ALL of them (keeping this header), and rebuild each.
+#
+# NOTE, and it is the reason to read this before trusting a green check: `make check-shared`
+# verifies a repo against ITS OWN manifest. It cannot see two repos holding DIFFERENT copies of
+# the same shared header — that state has already occurred once, and both repos reported OK. The
+# only thing that catches it is diffing the SHARED.md5 files of the repos against each other.
+# With four models that matters more than it did with two.
+#
+# THIS MANIFEST IS DELIBERATELY EMPTY. ATURAN is still at its initial fork and holds NONE of the
+# eleven shared headers — not ATPhys.h, BoundaryConditions.h, ConvectiveAdjustment.h,
+# FluxLimiter.h, Turbulence.h, Precipitation.h, Radiation.h, PressureSolver.h,
+# SaturationAdjustment.h, Reporting.h or ParaViewWriter.h. It exists NOW, before the first copy,
+# so that the guard is never the thing that gets added last: every header that arrives adds its
+# line here in the SAME commit that copies it, and `make check-shared` is green from day one
+# rather than green because nothing is being checked. It reports the empty case explicitly for
+# exactly that reason — an empty manifest and a passing manifest must not look alike.
+#
+# To add one: copy the header from ATNEPT (the most recently ported sibling), then
+#     md5sum planet/<Header>.h >> planet/SHARED.md5
+# and confirm the resulting line matches the sibling's entry for that file.

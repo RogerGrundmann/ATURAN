@@ -60,6 +60,20 @@ $(PARAM_OUTPUTS) &: param.py
 # include the header, and under -j it raced against the compile of that very object.
 $(ATURAN_OBJ) $(ATURAN_CLI_OBJ): $(PARAM_OUTPUTS)
 
+# Verify the shared headers have not diverged between the planet models. Same target as ATJUP,
+# ATSAT and ATNEPT carry, with one addition they do not need: ATURAN holds no shared headers yet,
+# and a bare `md5sum -c` on an empty list exits 1 with "no properly formatted checksum lines
+# found". Reporting the empty case in its own words keeps the target honest — "nothing to verify"
+# must not be indistinguishable from "verified".
+.PHONY: check-shared
+check-shared:
+	@lines=`grep -v '^#' planet/SHARED.md5 | grep -v '^[[:space:]]*$$' || true`; \
+	if [ -z "$$lines" ]; then \
+		echo "check-shared: no shared headers in ATURAN yet — nothing to verify"; \
+	else \
+		echo "$$lines" | md5sum -c - && echo "shared headers OK"; \
+	fi
+
 analyze:
 	analyze-build make
 
