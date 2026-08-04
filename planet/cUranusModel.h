@@ -49,6 +49,7 @@ class cUranusModel{
     template<class M> friend class ParaViewWriter;
     template<class M> friend class ConvectiveAdjustment;
     template<class M> friend class FluxLimiter;
+    template<class M> friend class SaturationAdjustment;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -71,6 +72,32 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+
+    // ---- What the SHARED SaturationAdjustment.h asks of this model ----
+
+    // Uranus contains no solid obstacle: it is an ice giant modelled as a spherical shell, and
+    // nothing in ATURAN marks a cell as ground. ATSAT and ATNEPT answer the same question the
+    // same way; only ATJUP has an obstacle, and only for its seamount experiments.
+    bool is_solid(int, int, int) const { return false; }
+
+    // The density the adjustment divides by. ATURAN_LOCAL_RHO=1 uses the LOCAL mixture density
+    // where it is usable and falls back to the constant r_mix where it is not — which matters
+    // because rho_mix is zero until DiffMassFluxUran has run, and a zero here would divide
+    // through the whole adjustment. Default 0 = the constant r_mix everywhere, which is what
+    // ATURAN has always used. Exactly ATSAT's, ATJUP's and ATNEPT's rho_at().
+    double rho_at(int i, int j, int k){
+        static const int local = [](){
+            const char* e = getenv("ATURAN_LOCAL_RHO"); return e ? atoi(e) : 0; }();
+        if(!local) return r_mix;
+        const double rho = rho_mix.x[i][j][k];
+        return (rho > 0.0 && std::isfinite(rho)) ? rho : r_mix;
+    }
+
+    // Whether the shared adjustment writes the static pressure back after condensing. ATSAT says
+    // true; ATURAN's own routine only READS p_stat (two references, both reads), so it says false
+    // and the shared algorithm leaves the field alone — one of the two behaviours had to be named
+    // rather than assumed.
+    static bool satadj_updates_pstat(){ return false; }
 
     // ---- Hooks for the shared FluxLimiter<Planet> (FluxLimiter.h) ----
     //

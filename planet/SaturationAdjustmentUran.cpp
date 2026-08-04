@@ -10,7 +10,7 @@
 using namespace std;
 using namespace AtomUtils;
 
-void SaturationAdjustmentUran::run(const std::string& gas,
+void SaturationAdjustmentUran::run_legacy(const std::string& gas,
     double coeff_A,   double coeff_B,
     double coeff_A_i, double coeff_B_i,
     double t_0,       double t_00,
@@ -175,4 +175,35 @@ void SaturationAdjustmentUran::run(const std::string& gas,
 
     cout << "      SaturationAdjustment of " << gas << " ended" << endl;
     return;
+}
+
+/*
+ * Dispatch between the inherited routine above and the SHARED SaturationAdjustment<Planet>.
+ * Default is the inherited one; ATURAN_SATADJ=1 selects the shared algorithm. See the header for
+ * what is known about the difference (measured on ATSAT, not on Uranus) and for why the ice
+ * quadruple below is the liquid one.
+ */
+void SaturationAdjustmentUran::run(const std::string& gas,
+    double coeff_A,   double coeff_B,
+    double coeff_A_i, double coeff_B_i,
+    double t_0,       double t_00,
+    double ep,        double lv,  double ls,
+    double cp,        double r,
+    double C,         double L0,  double R,
+    double del_alf,   double del_bet,   double m_mol,
+    Array& c,         Array& cloud,   Array& ice)
+{
+    if(mirrored_enabled() == 0){
+        run_legacy(gas, coeff_A, coeff_B, coeff_A_i, coeff_B_i, t_0, t_00, ep, lv, ls,
+                   cp, r, C, L0, R, del_alf, del_bet, m_mol, c, cloud, ice);
+        return;
+    }
+
+    // THE ICE QUADRUPLE IS THE LIQUID ONE — see the header. This is the single place to change
+    // when real Uranus ice coefficients exist; the shared algorithm already treats the liquid
+    // and ice pairs separately, so nothing else has to move.
+    SaturationAdjustment<cUranusModel>(m).run(gas, t_0, t_00, ep, lv, ls,
+                                              C, L0, R, del_alf, del_bet,
+                                              C, L0,    del_alf, del_bet,
+                                              c, cloud, ice);
 }
