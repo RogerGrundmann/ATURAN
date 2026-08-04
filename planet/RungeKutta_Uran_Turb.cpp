@@ -24,6 +24,13 @@ void cUranusModel::RungeKuttaUran(){
     const double inv_dthe2 = 1.0 / (dthe * dthe);
     const double inv_dphi2 = 1.0 / (dphi * dphi);
 
+    // Turbulence clamps, used only when the closure is on. k* has a physical ceiling; dis* has a
+    // FLOOR because it appears in denominators throughout the closure (nue = k/dis among them) and
+    // a zero there is an infinity one step later.
+    const bool turb_on_rk = turb_active;
+    const double tke_max_nd = 1000.0 / (u_0 * u_0);   // 1000 m2/s2
+    constexpr double dis_min_nd = 1.0e-10;            // matches the closure's dis_min
+
     const double t_min = 0.1;   // ~7.6 K physical (prevents buoyancy blow-up)
     const double t_max = 10.0;  // ~760 K physical
 
@@ -119,6 +126,12 @@ void cUranusModel::RungeKuttaUran(){
                                        : acc_nh3_ice.x[i][j][k] + wgt * rhs_nh3_ice.x[i][j][k];
                     acc_nh4sh.x[i][j][k] = (stage == 0) ? wgt * rhs_nh4sh.x[i][j][k]
                                        : acc_nh4sh.x[i][j][k] + wgt * rhs_nh4sh.x[i][j][k];
+                    if(turb_on_rk){
+                        acc_tke.x[i][j][k] = (stage == 0) ? wgt * rhs_tke.x[i][j][k]
+                                           : acc_tke.x[i][j][k] + wgt * rhs_tke.x[i][j][k];
+                        acc_dis.x[i][j][k] = (stage == 0) ? wgt * rhs_dis.x[i][j][k]
+                                           : acc_dis.x[i][j][k] + wgt * rhs_dis.x[i][j][k];
+                    }
 
                     if(stage < 3){
                         t.x[i][j][k] = tn.x[i][j][k] + c_in * rhs_t.x[i][j][k];
@@ -138,6 +151,12 @@ void cUranusModel::RungeKuttaUran(){
                         nh3_cloud.x[i][j][k] = nh3_cloudn.x[i][j][k] + c_in * rhs_nh3_cloud.x[i][j][k];
                         nh3_ice.x[i][j][k] = nh3_icen.x[i][j][k] + c_in * rhs_nh3_ice.x[i][j][k];
                         nh4sh.x[i][j][k] = nh4shn.x[i][j][k] + c_in * rhs_nh4sh.x[i][j][k];
+                        if(turb_on_rk){
+                            tke.x[i][j][k] = AtomUtils::clamp(tken.x[i][j][k]
+                                + c_in * rhs_tke.x[i][j][k], 0.0, tke_max_nd);
+                            dis.x[i][j][k] = std::max(disn.x[i][j][k]
+                                + c_in * rhs_dis.x[i][j][k], dis_min_nd);
+                        }
                     }
                 }
             }
@@ -167,6 +186,12 @@ void cUranusModel::RungeKuttaUran(){
                 nh3_cloud.x[i][j][k] = nh3_cloudn.x[i][j][k] + dt * acc_nh3_cloud.x[i][j][k] / 6.0;
                 nh3_ice.x[i][j][k] = nh3_icen.x[i][j][k] + dt * acc_nh3_ice.x[i][j][k] / 6.0;
                 nh4sh.x[i][j][k] = nh4shn.x[i][j][k] + dt * acc_nh4sh.x[i][j][k] / 6.0;
+                if(turb_on_rk){
+                    tke.x[i][j][k] = AtomUtils::clamp(std::max(tken.x[i][j][k]
+                        + dt * acc_tke.x[i][j][k] / 6.0, 0.0), 0.0, tke_max_nd);
+                    dis.x[i][j][k] = std::max(disn.x[i][j][k]
+                        + dt * acc_dis.x[i][j][k] / 6.0, dis_min_nd);
+                }
             }
         }
     }

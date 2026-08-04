@@ -547,6 +547,8 @@ void cUranusModel::resetArrays(){
     acc_nh3_cloud.initArray(im, jm, km, 0.0);
     acc_nh3_ice.initArray(im, jm, km, 0.0);
     acc_nh4sh.initArray(im, jm, km, 0.0);
+    acc_tke.initArray(im, jm, km, 0.0);
+    acc_dis.initArray(im, jm, km, 0.0);
 
     tke.initArray(im, jm, km, 0.0);
     dis.initArray(im, jm, km, 0.0);
@@ -579,6 +581,8 @@ void cUranusModel::resetArrays(){
     rhs_nh3_cloud.initArray(im, jm, km, 0.0);        // auxilliar field RHS nh3_cloud
     rhs_nh3_ice.initArray(im, jm, km, 0.0);            // auxilliar field RHS nh3_ice
     rhs_nh4sh.initArray(im, jm, km, 0.0);                // auxilliar field RHS nh4sh
+    rhs_tke.initArray(im, jm, km, 0.0);
+    rhs_dis.initArray(im, jm, km, 0.0);
 
     aux.initArray(im, jm, km, 0.0);                // auxilliar field u-velocity component
     aux_u.initArray(im, jm, km, 0.0);                // auxilliar field u-velocity component
@@ -629,6 +633,11 @@ void cUranusModel::restoreVar(double coeff){
         for(int j = 0; j < jm; j++){
             for(int k = 0; k < km; k++){
                 tn.x[i][j][k] = coeff * t.x[i][j][k];
+                // k* and dis* take the same start-of-step copies the other prognostic fields
+                // get; without them the RK4 stages would integrate from a moving base. With the
+                // closure off both fields are identically zero, so these are zero too.
+                tken.x[i][j][k] = coeff * tke.x[i][j][k];
+                disn.x[i][j][k] = coeff * dis.x[i][j][k];
                 // p_dynn is the previous-iteration dynamic pressure. Nothing maintained it
                 // and nothing allocated it, while steadyQuery's pressure case sat commented
                 // out because of that. It belongs with the other n-copies.

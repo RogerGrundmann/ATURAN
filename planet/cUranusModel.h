@@ -102,6 +102,8 @@ public:
     Array acc_nh3_cloud;
     Array acc_nh3_ice;
     Array acc_nh4sh;
+    Array acc_tke;              // RK4 accumulator for k*
+    Array acc_dis;              // RK4 accumulator for dis*
 
     // ---- Turbulence closure fields, for the SHARED Turbulence.h ----
     //
@@ -886,6 +888,8 @@ private:
     Array rhs_nh3_cloud;        // auxilliar field RHS nh3_cloud
     Array rhs_nh3_ice;            // auxilliar field RHS nh3_ice
     Array rhs_nh4sh;                // auxilliar field RHS nh4sh
+    Array rhs_tke;                  // tendency of k*,   assembled in RHS_Uran_Turb
+    Array rhs_dis;                  // tendency of dis*, assembled in RHS_Uran_Turb
 
     Array aux;                // auxilliar field u-velocity component
     Array aux_u;                // auxilliar field u-velocity component
