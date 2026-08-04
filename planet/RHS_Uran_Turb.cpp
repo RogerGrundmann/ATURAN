@@ -289,10 +289,34 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + nh4sh.x[i][j][k]                            * r_mix / rho_cond_nh4sh;
     const double re_eff = re / (1.0 + 2.5 * phi);
 
+    // ===== Turbulent (eddy) diffusion from the closure — stage three =====
+    //
+    // Until now the closure filled nue* and nothing read it: k* and dis* were transported, a
+    // viscosity was computed from them, and no equation felt it. This is the step that closes that
+    // loop. ATURAN_TURB_COUPLING is a MULTIPLIER, not a flag — default 0.0 leaves every equation
+    // exactly as it was, and 1.0 applies the closure's own nue* in full, so the port can be walked
+    // in rather than switched on.
+    //
+    // nue_t is added ALONGSIDE the existing molecular term rather than replacing it; re_eff
+    // already carries Uranus's correction for condensate loading, which is a separate physical
+    // effect and stays. Pr_t = 0.9 is the turbulent Prandtl number relating the scalar eddy
+    // diffusivity to the momentum one.
+    //
+    // THE CAVEAT ATSAT FOUND APPLIES HERE WITH LESS FORCE BUT THE SAME SIGN: its nue* came out
+    // ~77x SMALLER than the molecular background 1/re, so coupling changed almost nothing.
+    // ATURAN's seeded nue* is 0.000165 against 1/re = 0.001 — 6.1x smaller. A coupling that does
+    // almost nothing is worth knowing about before it is trusted.
+    static const double turb_coupling = [](){
+        const char* e = getenv("ATURAN_TURB_COUPLING"); return e ? atof(e) : 0.0; }();
+    constexpr double Pr_t = 0.9;
+    const double nue_t   = (turb_coupling != 0.0 && std::isfinite(nue.x[i][j][k]))
+                         ? turb_coupling * std::max(0.0, nue.x[i][j][k]) : 0.0;
+    const double nue_t_s = nue_t / Pr_t;      // scalar (heat / species) eddy diffusivity
+
     rhs_t.x[i][j][k] =
         + pressure_t
         - transport_t
-        + diffusion_t / (re * pr)
+        + diffusion_t / (re * pr) + diffusion_t * nue_t_s
         - chemical_reaction * thermalmassflux.x[i][j][k];
 
     // Sponge layer: quadratic Rayleigh damping over the top quarter of the domain.
@@ -306,7 +330,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + buoyancy * (L_atm / (u_0 * u_0)) * g * (p_stat.x[i][j][k] + p_dyn.x[i][j][k])         // no oszillations
                       / (r_mix * R_mix * t.x[i][j][k] * t_ref)
         - transport_u
-        + diffusion_u / re_eff
+        + diffusion_u / re_eff + diffusion_u * nue_t
         - Coriolis    * scale_Cor * Coriolis_rad
         - centrifugal * scale_cen * centrifugal_rad
         - sponge * u_ijk;
@@ -314,65 +338,65 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     rhs_v.x[i][j][k] =
         - dpdthe_term
         - transport_v
-        + diffusion_v / re_eff
+        + diffusion_v / re_eff + diffusion_v * nue_t
         - Coriolis    * scale_Cor * Coriolis_the
         - centrifugal * scale_cen * centrifugal_the;
 
     rhs_w.x[i][j][k] =
         - dpdphi_term
         - transport_w
-        + diffusion_w / re_eff
+        + diffusion_w / re_eff + diffusion_w * nue_t
         - Coriolis    * Coriolis_phi;
 
     rhs_ch4.x[i][j][k] =
         - transport_ch4
-        + diffusion_ch4 / (sc_ch4 * re);
+        + diffusion_ch4 / (sc_ch4 * re) + diffusion_ch4 * nue_t_s;
 
     rhs_ch4_cloud.x[i][j][k] =
         - transport_ch4_cloud
-        + diffusion_ch4_cloud / (sc_ch4 * re);
+        + diffusion_ch4_cloud / (sc_ch4 * re) + diffusion_ch4_cloud * nue_t_s;
 
     rhs_ch4_ice.x[i][j][k] =
         - transport_ch4_ice
-        + diffusion_ch4_ice / (sc_ch4 * re);
+        + diffusion_ch4_ice / (sc_ch4 * re) + diffusion_ch4_ice * nue_t_s;
 
     rhs_h2o.x[i][j][k] =
         - transport_h2o
-        + diffusion_h2o / (sc_h2o * re);
+        + diffusion_h2o / (sc_h2o * re) + diffusion_h2o * nue_t_s;
 
     rhs_h2o_cloud.x[i][j][k] =
         - transport_h2o_cloud
-        + diffusion_h2o_cloud / (sc_h2o * re);
+        + diffusion_h2o_cloud / (sc_h2o * re) + diffusion_h2o_cloud * nue_t_s;
 
     rhs_h2o_ice.x[i][j][k] =
         - transport_h2o_ice
-        + diffusion_h2o_ice / (sc_h2o * re);
+        + diffusion_h2o_ice / (sc_h2o * re) + diffusion_h2o_ice * nue_t_s;
 
     rhs_h2s.x[i][j][k] =
         - transport_h2s
-        + diffusion_h2s / (sc_h2s * re)
+        + diffusion_h2s / (sc_h2s * re) + diffusion_h2s * nue_t_s
         + chemical_reaction * massflux_h2s.x[i][j][k];
 
     rhs_h2s_cloud.x[i][j][k] =
         - transport_h2s_cloud
-        + diffusion_h2s_cloud / (sc_h2s * re);
+        + diffusion_h2s_cloud / (sc_h2s * re) + diffusion_h2s_cloud * nue_t_s;
 
     rhs_h2s_ice.x[i][j][k] =
         - transport_h2s_ice
-        + diffusion_h2s_ice / (sc_h2s * re);
+        + diffusion_h2s_ice / (sc_h2s * re) + diffusion_h2s_ice * nue_t_s;
 
     rhs_nh3.x[i][j][k] =
         - transport_nh3
-        + diffusion_nh3 / (sc_nh3 * re)
+        + diffusion_nh3 / (sc_nh3 * re) + diffusion_nh3 * nue_t_s
         + chemical_reaction * massflux_nh3.x[i][j][k];
 
     rhs_nh3_cloud.x[i][j][k] =
         - transport_nh3_cloud
-        + diffusion_nh3_cloud / (sc_nh3 * re);
+        + diffusion_nh3_cloud / (sc_nh3 * re) + diffusion_nh3_cloud * nue_t_s;
 
     rhs_nh3_ice.x[i][j][k] =
         - transport_nh3_ice
-        + diffusion_nh3_ice / (sc_nh3 * re);
+        + diffusion_nh3_ice / (sc_nh3 * re) + diffusion_nh3_ice * nue_t_s;
 
     // Stokes terminal velocity for NH4SH crystals falling in the -r direction.
     // v_stokes [m/s] = (2/9) * r_p² * (rho_crystal - rho_mix) * g / mue_mix
@@ -386,7 +410,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     rhs_nh4sh.x[i][j][k] =
         - transport_nh4sh
         + fluxlim_nh4sh.x[i][j][k]
-        + diffusion_nh4sh / (sc_nh4sh * re)
+        + diffusion_nh4sh / (sc_nh4sh * re) + diffusion_nh4sh * nue_t_s
         + chemical_reaction * massflux_nh4sh.x[i][j][k]
         + (v_stokes_nh4sh / u_0) * dnh4shdr;
 
