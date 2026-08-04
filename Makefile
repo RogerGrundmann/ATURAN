@@ -20,7 +20,7 @@ ATURAN_OBJ = planet/cUranusModel.o planet/PrintMsg_Uran.o planet/RungeKutta_Uran
 planet/RHS_Uran.o planet/ParaView_Uran.o planet/Thermo_Uran.o \
 planet/InitVariables_Uran.o planet/InitVelocity_Uran.o planet/FileIO_Uran.o \
 planet/Pressure_Uran.o planet/SaturationAdjustmentUran.o \
-planet/Delegations_Uran.o
+planet/Delegations_Uran.o planet/BC_Uran.o
 
 XML_OBJ = tinyxml2/tinyxml2.o
 
