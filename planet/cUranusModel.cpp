@@ -67,6 +67,13 @@ using namespace tinyxml2;
 // times the absolute flux. A grey scheme tuned there has no claim on a planet in near radiative
 // equilibrium, and ATNEPT's own port found it emitting 23x Neptune's entire budget. Expect trouble
 // and measure it rather than assuming the port carried.
+//
+// MEASURED: 2.22x the budget at iteration 1, 2.51x at iteration 2, and NOT because the column is
+// clamped. 75e7403's message guessed at the t_max ceiling; that guess is wrong at this run length.
+// Peak temperature is 411.8 K against a ceiling of 764 K (t_max 10.0 nondim x t_ref 76.4), so the
+// clamp never engages. The 1477 K in the earlier as-is reference run came from the PRE-29693b6
+// integrator, which was not RK4; the separated one peaks 1065 K lower. Whatever drives the
+// over-emission is in the scheme or in the photosphere temperature at 0.17 bar, not in a clamp.
 static int radiation_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_RADIATION"); return e ? atoi(e) : 0; }();
     return v;
