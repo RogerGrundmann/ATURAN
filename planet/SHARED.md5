@@ -15,15 +15,17 @@
 # only thing that catches it is diffing the SHARED.md5 files of the repos against each other.
 # With four models that matters more than it did with two.
 #
-# THIS MANIFEST IS DELIBERATELY EMPTY. ATURAN is still at its initial fork and holds NONE of the
-# eleven shared headers — not ATPhys.h, BoundaryConditions.h, ConvectiveAdjustment.h,
-# FluxLimiter.h, Turbulence.h, Precipitation.h, Radiation.h, PressureSolver.h,
-# SaturationAdjustment.h, Reporting.h or ParaViewWriter.h. It exists NOW, before the first copy,
-# so that the guard is never the thing that gets added last: every header that arrives adds its
-# line here in the SAME commit that copies it, and `make check-shared` is green from day one
-# rather than green because nothing is being checked. It reports the empty case explicitly for
-# exactly that reason — an empty manifest and a passing manifest must not look alike.
+# TWO OF THE ELEVEN ARE HERE. ATPhys.h and ParaViewWriter.h arrived together with the shared
+# ParaView writer. Still to come: BoundaryConditions.h, ConvectiveAdjustment.h, FluxLimiter.h,
+# Turbulence.h, Precipitation.h, Radiation.h, PressureSolver.h, SaturationAdjustment.h and
+# Reporting.h. This file was created EMPTY one commit before the first of them, so that the guard
+# was never the thing added last: every header adds its line here in the SAME commit that copies
+# it, and `make check-shared` has been green from before there was anything to check. It still
+# reports the empty case in its own words, because an empty manifest and a passing one must not
+# look alike.
 #
 # To add one: copy the header from ATNEPT (the most recently ported sibling), then
 #     md5sum planet/<Header>.h >> planet/SHARED.md5
 # and confirm the resulting line matches the sibling's entry for that file.
+cb1c5d6d2a17ab71a3325c602833feb2  planet/ATPhys.h
+52a7a800875443e2f8f3ebfe9506c6cd  planet/ParaViewWriter.h

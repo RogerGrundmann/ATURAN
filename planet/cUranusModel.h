@@ -44,6 +44,9 @@ namespace{
 
 class cUranusModel{
 
+    // Shared physics/output templates (SHARED.md5, `make check-shared`). ATURAN is the fourth
+    // model to take these; see ParaViewWriter.h for what it provides and what it does not.
+    template<class M> friend class ParaViewWriter;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -51,6 +54,29 @@ class cUranusModel{
     friend class VelocityInitializerUran;
 
 public:
+
+    // ---- Hooks for the shared ParaViewWriter<Planet> (ParaViewWriter.h) ----
+    // planet_name() is the word in an output FILE name ("Uranus_radial_20_1.vtk");
+    // planet_short() is the abbreviation inside a .vtk title line
+    // ("Radial_Data_Uran_Circulation"). ATURAN carried both spellings by hand, and like ATNEPT
+    // its "has been written" line used the SHORT one — announcing Uran_radial_20_1.vtk for a
+    // file actually called Uranus_radial_20_1.vtk. The shared writer names the file it wrote.
+    static const char* planet_name(){ return "Uranus"; }
+    static const char* planet_short(){ return "Uran"; }
+
+    // What the panorama .vts prints in its "Temperature" array — degrees Celsius, as ATJUP and
+    // ATNEPT do; ATSAT writes kelvin/10, and one array name carrying two quantities across four
+    // models remains unsettled.
+    //
+    // ATURAN DID NOT COMPUTE THIS AT ALL. Four of its five ParaView temperatures read
+    //     t.x[i][j][k] * 273.15 - 273.15
+    // with 273.15 standing where t_ref belongs. t_ref is 76.4 on Uranus, so the constant was
+    // wrong by a factor of 273.15/76.4 = 3.5752, and those temperatures were meaningless — the
+    // initial deep equator, 421.0 K = t_nd 5.5105, printed as 1232.0 degC where it should read
+    // 147.9. The telling part is that the ZONAL writer already used t_ref correctly, so the model
+    // disagreed with ITSELF: one slice was in degrees Celsius and the other three plus the
+    // panorama were in nothing at all. Fixed here and at the three remaining call sites.
+    double paraview_temperature(double t_nd) const { return t_nd * t_ref - 273.15; }
 
     const char *filename;
 
