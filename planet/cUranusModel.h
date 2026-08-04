@@ -51,6 +51,7 @@ class cUranusModel{
     template<class M> friend class FluxLimiter;
     template<class M> friend class SaturationAdjustment;
     template<class M> friend class PressureSolver;
+    template<class M> friend class Reporting;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -73,6 +74,46 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+
+    // ---- Hooks for the shared Reporting<Planet> (Reporting.h) ----
+
+    // ATJUP flips cos(theta) in the southern hemisphere for the continuity residual; ATSAT and
+    // ATNEPT never have, and neither has ATURAN. Same knob shape as ATJUP's, so the four models
+    // answer one question rather than differ by a missing line. Default off = unchanged.
+    static bool costhe_abs(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_COSTHE_ABS"); return e && atoi(e) != 0; }();
+        return v;
+    }
+
+    // Column layout of the min/max report. ATURAN uses the same widths ATSAT and ATNEPT do — 6
+    // for the unit column, ten spaces between the max and min halves. ATJUP widened its unit
+    // column to 12 and uses three spaces, because its unit strings are longer.
+    static int minmax_unit_width()      { return 6; }
+    static const char *minmax_separator(){ return "          "; }
+
+    static const char *steady_heading(){
+        return " 3D iterational process for the surface boundary conditions\n printout of maximum and minimum absolute and relative errors of the computed values at their locations: level, latitude, longitude";
+    }
+
+    // The iteration line of the steady-state header, including its trailing newline.
+    //
+    // THIS PRINTS iter_n, NOT n, AND THAT IS A CORRECTION. ATURAN's steadyQuery printed `n`,
+    // exactly as ATNEPT's did — a member that is declared and never assigned anywhere in this
+    // model, since the iteration loop counts with iter_n. It therefore printed stack garbage, and
+    // nobody had seen it because nothing ever called the routine. ATJUP genuinely counts with n
+    // and prints it; ATSAT, ATNEPT and now ATURAN use iter_n.
+    std::string steady_iter_line() const {
+        return "      n = " + std::to_string(iter_n) + "\n";
+    }
+
+    // p_dyn is stored as the NONDIMENSIONAL kinematic pressure, so displaying it in bar needs
+    // r_mix*u_0^2*1e-5. Default OFF (returns 1.0) so the printed number is unchanged;
+    // ATURAN_PDYN_UNITS=1 makes it actually bar. Mirrors the accessor of the same name in the
+    // other three, which is what lets the pressure row read the same in all four models.
+    double p_dyn_to_bar() const {
+        static const bool on = [](){ const char* e = getenv("ATURAN_PDYN_UNITS"); return e && atoi(e) != 0; }();
+        return on ? r_mix * u_0 * u_0 * 1.0e-5 : 1.0;
+    }
 
     // ---- What the SHARED PressureSolver.h asks of this model ----
     //
@@ -706,7 +747,11 @@ private:
     Array cloudiness_nh3; // cloudiness, N in literature
 
     Array p_dyn;                // dynamic pressure
-    Array p_dynn;                // dynamic pressure
+    // Declared here since the fork and never allocated — no p_dynn.initArray() existed anywhere,
+    // so its data pointer was the NULL Array's default constructor leaves. steadyQuery's pressure
+    // case was commented out because of that. Now allocated with p_dyn and refreshed by
+    // restoreVar with the other n-copies. Same history as ATNEPT's.
+    Array p_dynn;               // dynamic pressure, previous iteration
     Array p_stat;                // static pressure
     Array rho_mix;              // local mixture density from ideal gas: p_stat/(R_mix*T)
 
