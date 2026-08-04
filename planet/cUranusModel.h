@@ -56,6 +56,7 @@ class cUranusModel{
     template<class M> friend class BoundaryConditions;
     template<class M> friend class Turbulence;
     template<class M> friend class Radiation;
+    template<class M> friend class Precipitation;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -133,6 +134,33 @@ public:
     static double rad_albedo_bond() { return 0.300; }  // Uranus Bond albedo (S*(1-A) is ABSORBED)
     static double rad_x_H2()        { return 0.83;  }  // H2 mole fraction
     static double rad_x_He()        { return 0.15;  }  // He mole fraction
+
+    // ---- Precipitation fields, for the SHARED Precipitation.h ----
+    Array P_rain;
+    Array P_snow;
+    Array P_graupel;
+    Array P_nh3_rain;
+    Array P_nh3_snow;
+    Array P_nh3_graupel;
+    Array P_ch4_rain;
+    Array P_ch4_snow;
+    Array P_ch4_graupel;
+    Array P_nh4sh;
+    Array Q_precip;
+    Array S_precip_h2o;
+    Array S_precip_h2o_cloud;
+    Array S_precip_h2o_ice;
+    Array S_precip_nh3;
+    Array S_precip_nh3_cloud;
+    Array S_precip_nh3_ice;
+    Array S_precip_ch4;
+    Array S_precip_ch4_cloud;
+    Array S_precip_ch4_ice;
+    Array_2D precip_srf_h2o;
+    Array_2D precip_srf_nh3;
+    Array_2D precip_srf_ch4;
+    Array_2D precip_srf_nh4sh;
+    Array_2D precip_srf_total;
 
     Array radiation;            // net thermal radiative flux [W/m2]
     Array epsilon;              // layer emissivity
@@ -697,6 +725,27 @@ private:
 
     double del_alf_nh3 = - 0.888;
     double del_bet_nh3 = 0.0;
+
+    // Ice-phase saturation quadruples, for the SHARED Precipitation.h. THESE MUST SIT AFTER THE
+    // LIQUID CONSTANTS THEY COPY: member initialisers run in DECLARATION order, so declaring them
+    // earlier reads uninitialised memory. ATNEPT recorded the same trap.
+    //
+    // CH4's are real values; H2O's and NH3's are the LIQUID constants standing in, exactly as
+    // ATSAT's and ATNEPT's are — ATURAN's parameter set has no ice pair for either, and inventing
+    // numbers for Uranus's ices is a physics decision, not a port. It matters more here than
+    // anywhere: Uranus is the coldest of the four, so the ice branch is the one that carries.
+    double C_ch4_ice       = 1.627;
+    double del_alf_ch4_ice = 1.002;
+    double del_bet_ch4_ice = -4.1e-3;
+    double L0_ch4_ice      = 553.1;
+    double C_h2o_ice       = C_h2o;
+    double del_alf_h2o_ice = del_alf_h2o;
+    double del_bet_h2o_ice = del_bet_h2o;
+    double L0_h2o_ice      = L0_h2o;
+    double C_nh3_ice       = C_nh3;
+    double del_alf_nh3_ice = del_alf_nh3;
+    double del_bet_nh3_ice = del_bet_nh3;
+    double L0_nh3_ice      = L0_nh3;
 
     double del_alf_h2s = 0.0;
     double del_bet_h2s = - 2.9e-3;

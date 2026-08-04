@@ -20,6 +20,7 @@
 #include "ConvectiveAdjustmentUran.h"
 #include "TurbulenceUran.h"
 #include "RadiationUran.h"
+#include "PrecipitationUran.h"
 #include "PressureSolver.h"
 
 using namespace std;
@@ -74,6 +75,25 @@ using namespace tinyxml2;
 // clamp never engages. The 1477 K in the earlier as-is reference run came from the PRE-29693b6
 // integrator, which was not RK4; the separated one peaks 1065 K lower. Whatever drives the
 // over-emission is in the scheme or in the photosphere temperature at 0.17 bar, not in a clamp.
+// Precipitation microphysics (PrecipitationUran), the SHARED Precipitation<Planet>. DEFAULT OFF.
+// ATSAT runs its precipitation ON by an explicit decision taken after measuring it; ATURAN's has
+// not been measured, and a module that will eventually feed back into the condensate fields is not
+// something to switch on by inheritance.
+//
+// AS PORTED IT IS DIAGNOSTIC ONLY, and that is worth stating because ATNEPT's equivalent commit
+// says otherwise. Precipitation.h writes NO condensate array: it fills the P_* fluxes, Q_precip
+// and the S_precip_* source terms, and in ATURAN nothing reads S_precip_* at all. ATSAT and ATJUP
+// consume them in their RHS; ATNEPT only allocates them, as here. So the coupling is a further
+// step, exactly as it was for the turbulence closure.
+//
+// The call still sits AFTER the SaturationAdjustment block. That is precautionary rather than
+// currently load-bearing — once the S_precip_* terms reach the RHS the ordering will matter, and
+// putting it in the right place now costs nothing.
+static int precip_enabled(){
+    static const int v = [](){ const char* e = getenv("ATURAN_PRECIP"); return e ? atoi(e) : 0; }();
+    return v;
+}
+
 static int radiation_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_RADIATION"); return e ? atoi(e) : 0; }();
     return v;
@@ -410,6 +430,9 @@ void cUranusModel::Run(){
                 C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, m_ch4,
                 ch4, ch4_cloud, ch4_ice);
 
+            // Must follow the saturation adjustments: it removes condensate in place.
+            if(precip_enabled()) PrecipitationUran(*this).run();
+
             ChemistryUran(*this).DiffMassFluxUran();
 
             AtomUtils::damp_wiggles(difflux_h2s,     nullptr, true, true, true);
@@ -584,6 +607,32 @@ void cUranusModel::resetArrays(){
     acc_nh4sh.initArray(im, jm, km, 0.0);
     acc_tke.initArray(im, jm, km, 0.0);
     acc_dis.initArray(im, jm, km, 0.0);
+
+    P_rain.initArray(im, jm, km, 0.0);
+    P_snow.initArray(im, jm, km, 0.0);
+    P_graupel.initArray(im, jm, km, 0.0);
+    P_nh3_rain.initArray(im, jm, km, 0.0);
+    P_nh3_snow.initArray(im, jm, km, 0.0);
+    P_nh3_graupel.initArray(im, jm, km, 0.0);
+    P_ch4_rain.initArray(im, jm, km, 0.0);
+    P_ch4_snow.initArray(im, jm, km, 0.0);
+    P_ch4_graupel.initArray(im, jm, km, 0.0);
+    P_nh4sh.initArray(im, jm, km, 0.0);
+    Q_precip.initArray(im, jm, km, 0.0);
+    S_precip_h2o.initArray(im, jm, km, 0.0);
+    S_precip_h2o_cloud.initArray(im, jm, km, 0.0);
+    S_precip_h2o_ice.initArray(im, jm, km, 0.0);
+    S_precip_nh3.initArray(im, jm, km, 0.0);
+    S_precip_nh3_cloud.initArray(im, jm, km, 0.0);
+    S_precip_nh3_ice.initArray(im, jm, km, 0.0);
+    S_precip_ch4.initArray(im, jm, km, 0.0);
+    S_precip_ch4_cloud.initArray(im, jm, km, 0.0);
+    S_precip_ch4_ice.initArray(im, jm, km, 0.0);
+    precip_srf_h2o.initArray_2D(jm, km, 0.0);
+    precip_srf_nh3.initArray_2D(jm, km, 0.0);
+    precip_srf_ch4.initArray_2D(jm, km, 0.0);
+    precip_srf_nh4sh.initArray_2D(jm, km, 0.0);
+    precip_srf_total.initArray_2D(jm, km, 0.0);
 
     radiation.initArray(im, jm, km, 0.0);            // net thermal radiative flux [W/m2]
     epsilon.initArray(im, jm, km, 0.0);              // layer emissivity

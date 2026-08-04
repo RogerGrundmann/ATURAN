@@ -67,9 +67,20 @@ void cUranusModel::printMinMax(){
     // of. Printed because k* seeding to zero is otherwise unattributable.
     searchMinMax_2D(" max 2D vel_star ", " min 2D vel_star ", " m/s", vel_star, 1.0);
 
-    // The precipitation rows the other three models print are NOT here: ATURAN has not taken that
-    // template, so P_rain, P_snow, P_graupel, P_nh3_rain, P_ch4_rain, P_nh4sh, Q_precip and the
-    // three surface precipitation maps do not exist in this model. They belong with that port.
+    // The precipitation scheme's own fields. Zero unless ATURAN_PRECIP is set, and printed
+    // regardless — these arrays were computed and read by nothing, which is the position Q_rad and
+    // nue* were in before their rows were added, and it makes "the scheme changes no output"
+    // unanswerable. mm/day for the surface maps so they can be read against an energy budget.
+    searchMinMax_3D(" max 3D P_rain ", " min 3D P_rain ", " kg/m2/s", P_rain, 1.0);
+    searchMinMax_3D(" max 3D P_snow ", " min 3D P_snow ", " kg/m2/s", P_snow, 1.0);
+    searchMinMax_3D(" max 3D P_graupel ", " min 3D P_graupel ", " kg/m2/s", P_graupel, 1.0);
+    searchMinMax_3D(" max 3D P_nh3_rain ", " min 3D P_nh3_rain ", " kg/m2/s", P_nh3_rain, 1.0);
+    searchMinMax_3D(" max 3D P_ch4_rain ", " min 3D P_ch4_rain ", " kg/m2/s", P_ch4_rain, 1.0);
+    searchMinMax_3D(" max 3D P_nh4sh ", " min 3D P_nh4sh ", " kg/m2/s", P_nh4sh, 1.0);
+    searchMinMax_3D(" max 3D Q_precip ", " min 3D Q_precip ", " W/m3", Q_precip, 1.0);
+    searchMinMax_2D(" max 2D precip srf total ", " min 2D precip srf total ", " mm/d", precip_srf_total, 86400.0);
+    searchMinMax_2D(" max 2D precip srf H2O ", " min 2D precip srf H2O ", " mm/d", precip_srf_h2o, 86400.0);
+    searchMinMax_2D(" max 2D precip srf NH3 ", " min 2D precip srf NH3 ", " mm/d", precip_srf_nh3, 86400.0);
     cout << endl;
 
     cout << endl;
