@@ -17,9 +17,25 @@
 #include "SaturationAdjustmentUran.h"
 #include "BC_Uran.h"
 #include "VelocityInitializerUran.h"
+#include "ConvectiveAdjustmentUran.h"
 
 using namespace std;
 using namespace tinyxml2;
+
+// Dry convective adjustment (ConvectiveAdjustmentUran), the SHARED ConvectiveAdjustment<Planet>
+// that ATSAT, ATJUP and ATNEPT already run. DEFAULT OFF, so every existing ATURAN run stays
+// bit-identical; ATURAN_CONV_ADJ=1 switches it on. It restores any superadiabatic column to the
+// dry adiabat while conserving the column's mass-weighted enthalpy, and nothing else in this
+// model does that. Whether Uranus develops such columns at all is unmeasured here — switching it
+// on and reading the per-iteration report (columns touched, layers mixed, max dT, enthalpy drift)
+// is how to find out. Same convention as every other ported module: gated, off, measured later.
+//
+// Note the adiabat it compares against is g/cp_mix, so it reads the cp_mix corrected in 1992397 —
+// 1.0008 K/km rather than the 1.3620 the old mass weighting implied.
+static int conv_adj_enabled(){
+    static const int v = [](){ const char* e = getenv("ATURAN_CONV_ADJ"); return e ? atoi(e) : 0; }();
+    return v;
+}
 using namespace AtomUtils;
 
 cUranusModel* cUranusModel::m_model = NULL;
@@ -343,6 +359,10 @@ void cUranusModel::Run(){
         BC_Uran(*this).bcPhi();                                         // extrapolation in k-direction along grid boundaries
 
         restoreVar(1.0);
+
+        // After the state has been advanced and the boundaries applied: put any
+        // superadiabatic column back on the dry adiabat. Off by default (ATURAN_CONV_ADJ).
+        if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
 
         panorama_cnt++;
 

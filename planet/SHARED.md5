@@ -29,3 +29,4 @@
 # and confirm the resulting line matches the sibling's entry for that file.
 cb1c5d6d2a17ab71a3325c602833feb2  planet/ATPhys.h
 52a7a800875443e2f8f3ebfe9506c6cd  planet/ParaViewWriter.h
+97a14dd488fb7fd821f87905bff64eaf  planet/ConvectiveAdjustment.h

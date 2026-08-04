@@ -47,6 +47,7 @@ class cUranusModel{
     // Shared physics/output templates (SHARED.md5, `make check-shared`). ATURAN is the fourth
     // model to take these; see ParaViewWriter.h for what it provides and what it does not.
     template<class M> friend class ParaViewWriter;
+    template<class M> friend class ConvectiveAdjustment;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -63,6 +64,12 @@ public:
     // file actually called Uranus_radial_20_1.vtk. The shared writer names the file it wrote.
     static const char* planet_name(){ return "Uranus"; }
     static const char* planet_short(){ return "Uran"; }
+
+    // The model's own name in log lines written by SHARED code — "ATURAN: ..." — so a shared
+    // header can say which planet it is running on without knowing anything else about it. It is
+    // also the prefix the shared modules build their environment-variable names from. ATSAT,
+    // ATJUP and ATNEPT carry the same accessor.
+    static const char* planet_tag(){ return "ATURAN"; }
 
     // What the panorama .vts prints in its "Temperature" array — degrees Celsius, as ATJUP and
     // ATNEPT do; ATSAT writes kelvin/10, and one array name carrying two quantities across four
