@@ -19,6 +19,7 @@
 #include "VelocityInitializerUran.h"
 #include "ConvectiveAdjustmentUran.h"
 #include "TurbulenceUran.h"
+#include "RadiationUran.h"
 #include "PressureSolver.h"
 
 using namespace std;
@@ -53,6 +54,24 @@ using namespace tinyxml2;
 // its eddy viscosity ~77x SMALLER than the molecular background — the opposite of ATJUP's situation
 // and the opposite of what ATJUP's comment claimed. ATURAN's `re` is 1000 too. The first thing to
 // do after switching this on is compare nue* against 1/re.
+// Grey multi-layer radiation (RadiationUran), the SHARED Radiation<Planet> that the other three
+// already run. DEFAULT OFF, so every existing ATURAN run stays byte-identical; ATURAN_RADIATION=1
+// switches it on. It fills the DIAGNOSTIC arrays radiation / epsilon / Q_rad and touches neither t
+// nor any rhs — wiring the heating into the temperature equation is a separate step, as it was on
+// the other three models.
+//
+// Uranus is the hard case for this scheme in the opposite direction to Neptune. It absorbs
+// S*(1-A) = 3.696*0.700 = 2.59 W/m2 of sunlight against an intrinsic flux of 0.042 W/m2 — 1.6 % of
+// the budget, and consistent with zero within its own error bar. Neptune's internal flux is nearly
+// a third of its budget and Jupiter's, which this scheme was calibrated on, is about half at forty
+// times the absolute flux. A grey scheme tuned there has no claim on a planet in near radiative
+// equilibrium, and ATNEPT's own port found it emitting 23x Neptune's entire budget. Expect trouble
+// and measure it rather than assuming the port carried.
+static int radiation_enabled(){
+    static const int v = [](){ const char* e = getenv("ATURAN_RADIATION"); return e ? atoi(e) : 0; }();
+    return v;
+}
+
 static int turb_env_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_TURB"); return e ? atoi(e) : 0; }();
     return v;
@@ -431,6 +450,7 @@ void cUranusModel::Run(){
 
         // After the state has been advanced and the boundaries applied: put any
         // superadiabatic column back on the dry adiabat. Off by default (ATURAN_CONV_ADJ).
+        if(radiation_enabled()) RadiationUran(*this).run();
         if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
 
@@ -557,6 +577,10 @@ void cUranusModel::resetArrays(){
     acc_nh4sh.initArray(im, jm, km, 0.0);
     acc_tke.initArray(im, jm, km, 0.0);
     acc_dis.initArray(im, jm, km, 0.0);
+
+    radiation.initArray(im, jm, km, 0.0);            // net thermal radiative flux [W/m2]
+    epsilon.initArray(im, jm, km, 0.0);              // layer emissivity
+    Q_rad.initArray(im, jm, km, 0.0);                // radiative heating rate [W/m3]
 
     tke.initArray(im, jm, km, 0.0);
     dis.initArray(im, jm, km, 0.0);

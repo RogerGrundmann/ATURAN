@@ -55,6 +55,7 @@ class cUranusModel{
     template<class M> friend class Reporting;
     template<class M> friend class BoundaryConditions;
     template<class M> friend class Turbulence;
+    template<class M> friend class Radiation;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -104,6 +105,38 @@ public:
     Array acc_nh4sh;
     Array acc_tke;              // RK4 accumulator for k*
     Array acc_dis;              // RK4 accumulator for dis*
+
+    /*
+     * ---- Uranus's radiative constants, for the SHARED Radiation.h ----
+     *
+     * MEASURED PROPERTIES OF URANUS, which is why they live here and not in the shared file.
+     *
+     *                          ATJUP    ATSAT    ATNEPT   ATURAN   source
+     *   solar constant         50.5     14.83    1.505    3.696    1361/a^2, a = 19.19 AU
+     *   Bond albedo            0.343    0.342    0.290    0.300    Pearl & Conrath
+     *   intrinsic flux F_int   5.4      2.01     0.433    0.042    Pearl et al. 1990
+     *   H2 mole fraction       0.86     0.96     0.80     0.83
+     *   He mole fraction       0.136    0.032    0.19     0.15
+     *
+     * URANUS IS THE OPPOSITE EXTREME TO NEPTUNE, and that is the point of this row. Neptune
+     * radiates ~2.6x what it absorbs, so its INTERNAL flux dominates. Uranus absorbs
+     * S*(1-A) = 3.696*0.700 = 2.59 W/m2 against an intrinsic flux of 0.042 W/m2 — about 1.6 % of
+     * the budget, and Pearl et al. give it as 0.042 +/- 0.047, i.e. CONSISTENT WITH ZERO. Uranus
+     * is the one planet of the four with no measurable internal heat, which is why it receives
+     * LESS sunlight than Saturn yet is nearly in radiative equilibrium with what it gets.
+     *
+     * A grey scheme calibrated on Jupiter — five orders of magnitude up in internal flux — has no
+     * claim to work here. That is what the knob is for; adding the scheme establishes nothing.
+     */
+    static double rad_F_int()       { return 0.042; }  // Uranus intrinsic heat flux [W/m2]
+    static double rad_S_solar()     { return 3.696; }  // solar constant at 19.19 AU [W/m2]
+    static double rad_albedo_bond() { return 0.300; }  // Uranus Bond albedo (S*(1-A) is ABSORBED)
+    static double rad_x_H2()        { return 0.83;  }  // H2 mole fraction
+    static double rad_x_He()        { return 0.15;  }  // He mole fraction
+
+    Array radiation;            // net thermal radiative flux [W/m2]
+    Array epsilon;              // layer emissivity
+    Array Q_rad;                // radiative heating rate [W/m3]
 
     // ---- Turbulence closure fields, for the SHARED Turbulence.h ----
     //
