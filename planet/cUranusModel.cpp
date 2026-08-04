@@ -18,6 +18,7 @@
 #include "BC_Uran.h"
 #include "VelocityInitializerUran.h"
 #include "ConvectiveAdjustmentUran.h"
+#include "PressureSolver.h"
 
 using namespace std;
 using namespace tinyxml2;
@@ -36,6 +37,21 @@ static int conv_adj_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_CONV_ADJ"); return e ? atoi(e) : 0; }();
     return v;
 }
+
+// Which pressure solver runs. DEFAULT 0 = ATURAN's own PressureSolverUran, so every existing run
+// stays byte-identical; ATURAN_PRESS_SOLVER=1 selects the SHARED PressureSolver<Planet> that
+// ATSAT and ATJUP run.
+//
+// THESE ARE NOT THE SAME ALGORITHM, which is why this is a knob rather than a replacement. The
+// shared version carries the red-black ordering that makes a sweep mean one thing on any thread
+// count, the obstacle and rigid-lid handling, and the metric-radius and coordinate-stretching
+// hooks. What ATURAN's own solver does that the shared one may not is not established here — that
+// comparison is a physics question, not a refactor, and the same one ATNEPT left open.
+static int press_solver_shared(){
+    static const int v = [](){ const char* e = getenv("ATURAN_PRESS_SOLVER"); return e ? atoi(e) : 0; }();
+    return v;
+}
+
 using namespace AtomUtils;
 
 cUranusModel* cUranusModel::m_model = NULL;
@@ -296,7 +312,8 @@ void cUranusModel::Run(){
 
         if(iter_n % 2 == 0){
 
-            PressureSolverUran(*this).run();
+            if(press_solver_shared()) PressureSolver<cUranusModel>(*this).run();
+            else                      PressureSolverUran(*this).run();
             AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
 
             SaturationAdjustmentUran(*this).run("H2O",

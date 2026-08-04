@@ -50,6 +50,7 @@ class cUranusModel{
     template<class M> friend class ConvectiveAdjustment;
     template<class M> friend class FluxLimiter;
     template<class M> friend class SaturationAdjustment;
+    template<class M> friend class PressureSolver;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -72,6 +73,26 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+
+    // ---- What the SHARED PressureSolver.h asks of this model ----
+    //
+    // has_obstacle() is the same fact is_solid() states cell by cell, asked once: Uranus contains
+    // no solid body, so the solver can skip its obstacle handling entirely.
+    static bool has_obstacle(){ return false; }
+
+    // Whether the projection treats the radial walls as a rigid lid — u = 0 there rather than
+    // extrapolated. False keeps ATURAN's existing open boundaries. ATSAT and ATNEPT answer false
+    // too; the knob that turns it on for ATSAT is a separate, still-unsettled question.
+    static bool press_rigid_lid(){ return false; }
+
+    // ATURAN does not stretch the radial coordinate, so the solver's exp_rm factor stays 1.
+    // ATJUP's coord_stretching forms 1/(rm+1), which only makes sense while rad.z starts at 1.
+    bool coord_stretching = false;
+
+    // Radial-wall conditions on the intermediate velocity and the RHS, applied before the
+    // pressure Poisson solve. Mirrored from ATSAT's, which is where the cubic extrapolation and
+    // the rigid-lid alternative are explained. Defined in Pressure_Uran.cpp.
+    void prepareProjectionBoundaries(bool rigid_lid);
 
     // ---- What the SHARED SaturationAdjustment.h asks of this model ----
 
@@ -508,7 +529,10 @@ private:
     }
 
     struct CellGeometry {
-        double rm, rm2;
+        // exp_rm/exp_2_rm are the radial coordinate-stretching factors the SHARED
+        // PressureSolver.h reads. ATURAN does not stretch (coord_stretching = false), so the
+        // solver sets both to 1 and they are carried only so the struct satisfies the template.
+        double rm, rm2, exp_rm, exp_2_rm;
         double sinthe, sinthe2, costhe, cotanthe;
         double inv_rm, inv_rm2;
         double inv_rmsinthe, inv_rm2sinthe, inv_rm2sinthe2;
