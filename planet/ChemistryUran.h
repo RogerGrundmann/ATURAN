@@ -21,6 +21,7 @@
 #include "Array.h"
 #include "Array_1D.h"
 #include "cUranusModel.h"
+#include "FluxLimiter.h"
 
 class ChemistryUran {
     friend class cUranusModel;
@@ -83,113 +84,14 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    // TVD flux limiter for NH4SH advection (Superbee by default).
-    // Total Variation Diminishing (TVD)
-
-    // Computes the correction:
-    //   fluxlim_nh4sh = transport_centered - transport_TVD
-    //
-    // Adding this to rhs_nh4sh in RHSUran replaces the centered-difference
-    // advection with the Superbee-limited upwind scheme, preventing spurious
-    // oscillations at the sharp NH4SH cloud-formation boundary.
-    //
-    // To switch limiter: replace superbee_phi() with van_leer_phi() below.
-    // -----------------------------------------------------------------------
-    void FluxLimiterNH4SH()
-    {
-        using namespace std;
-        cout << endl << "      ATURAN: FluxLimiterNH4SH" << endl;
-
-        auto begin = chrono::high_resolution_clock::now();
-
-        const int    im = m.im, jm = m.jm, km = m.km;
-        const double dr   = m.dr;
-        const double dthe = m.dthe;
-        const double dphi = m.dphi;
-        constexpr double sinthe_min = 0.4;
-        constexpr double eps = 1.0e-12;
-
-        #pragma omp parallel for collapse(3) schedule(static)
-        for(int k = 1; k < km-1; k++){
-            for(int j = 1; j < jm-1; j++){
-                for(int i = 1; i < im-1; i++){
-
-                    const double q    = m.nh4sh.x[i][j][k];
-                    const double q_rp = m.nh4sh.x[i+1][j][k];
-                    const double q_rm = m.nh4sh.x[i-1][j][k];
-                    const double q_tp = m.nh4sh.x[i][j+1][k];
-                    const double q_tm = m.nh4sh.x[i][j-1][k];
-                    const double q_pp = m.nh4sh.x[i][j][k+1];
-                    const double q_pm = m.nh4sh.x[i][j][k-1];
-
-                    const double u = m.u.x[i][j][k];
-                    const double v = m.v.x[i][j][k];
-                    const double w = m.w.x[i][j][k];
-
-                    const double rm           = m.rad.z[i];
-                    const double sinthe       = max(sinthe_min, abs(sin(m.the.z[j])));
-                    const double inv_rm       = 1.0 / rm;
-                    const double inv_rmsinthe = 1.0 / (rm * sinthe);
-
-                    double corr = 0.0;
-
-                    // ---- r-direction ----
-                    // antidiff = |u| * (q_{i+1} - 2q_i + q_{i-1}) / (2*dr)
-                    // correction = (1 - phi(r)) * antidiff
-                    {
-                        const double df   = q_rp - q;
-                        const double db   = q    - q_rm;
-                        const double denom = df + (df >= 0.0 ? eps : -eps);
-                        const double r = (u >= 0.0)
-                            ? db / denom
-                            : ((i+2 < im ? m.nh4sh.x[i+2][j][k] : q_rp) - q_rp) / denom;
-                        corr += (1.0 - superbee_phi(r)) * abs(u) * (df - db) / (2.0 * dr);
-                    }
-
-                    // ---- theta-direction ----
-                    // Pole-symmetric handling: at j = 1 with v >= 0, q_tm = q[i][0][k]
-                    // is the Neumann-extrapolated boundary value (c43*q - c13*q_tp),
-                    // giving db = df/3 -> r = 1/3 (limiter partially active).
-                    // The mirror case at j = jm-2 with v < 0 wants q[i][jm][k], which
-                    // is off-grid; mirror the same Neumann extrapolation here so the
-                    // limiter behaves symmetrically across the equator instead of
-                    // collapsing to r = 0 (full antidiffusion) only at the south pole.
-                    {
-                        const double df   = q_tp - q;
-                        const double db   = q    - q_tm;
-                        const double denom = df + (df >= 0.0 ? eps : -eps);
-                        const double q_far = (j+2 < jm)
-                            ? m.nh4sh.x[i][j+2][k]
-                            : (m.c43 * q_tp - m.c13 * q);   // Neumann extrap of q[jm]
-                        const double r = (v >= 0.0)
-                            ? db / denom
-                            : (q_far - q_tp) / denom;
-                        corr += (1.0 - superbee_phi(r)) * abs(v) * inv_rm * (df - db) / (2.0 * dthe);
-                    }
-
-                    // ---- phi-direction ----
-                    {
-                        const double df   = q_pp - q;
-                        const double db   = q    - q_pm;
-                        const double denom = df + (df >= 0.0 ? eps : -eps);
-                        const double r = (w >= 0.0)
-                            ? db / denom
-                            : ((k+2 < km ? m.nh4sh.x[i][j][k+2] : q_pp) - q_pp) / denom;
-                        corr += (1.0 - superbee_phi(r)) * abs(w) * inv_rmsinthe * (df - db) / (2.0 * dphi);
-                    }
-
-                    m.fluxlim_nh4sh.x[i][j][k] = corr;
-                }
-            }
-        }
-
-        auto end = chrono::high_resolution_clock::now();
-        auto elapsed = chrono::duration_cast<chrono::nanoseconds>(end - begin);
-        printf(" time measured: %.3f seconds for FluxLimiterNH4SH\n", elapsed.count() * 1e-9);
-
-        cout << "      ATURAN: FluxLimiterNH4SH ended" << endl;
-        return;
-    }
+    // The TVD limiter is the SHARED FluxLimiter<Planet> template — ATURAN's hand-written copy
+    // was the same code as ATSAT's, ATJUP's and ATNEPT's, differing only where each model answers
+    // two questions the shared version now asks through hooks: rm = m.rad.z[i] against
+    // m.metricRadius(m.rad.z[i]), and a local `constexpr sinthe_min = 0.4` against
+    // ATPhys::polar_divisor_floor<Planet>(). Both reproduce ATURAN's previous values exactly by
+    // default, which is why swapping it in is byte-identical. See FluxLimiter.h for why this one
+    // routine could be shared while the rest of the chemistry cannot.
+    void FluxLimiterNH4SH(){ FluxLimiter<cUranusModel>(m).nh4sh(); }
 
     // -----------------------------------------------------------------------
     void DiffMassFluxUran()

@@ -48,6 +48,7 @@ class cUranusModel{
     // model to take these; see ParaViewWriter.h for what it provides and what it does not.
     template<class M> friend class ParaViewWriter;
     template<class M> friend class ConvectiveAdjustment;
+    template<class M> friend class FluxLimiter;
     friend class ChemistryUran;
     friend class PressureSolverUran;
     friend class SaturationAdjustmentUran;
@@ -70,6 +71,34 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+
+    // ---- Hooks for the shared FluxLimiter<Planet> (FluxLimiter.h) ----
+    //
+    // metricRadius() is the established hook for the one place the models genuinely differ in the
+    // limiter: ATJUP shifts rad.z itself at initialisation and so returns rm unchanged, while
+    // ATSAT shifts the metric factors here instead. ATURAN is in ATJUP's position for the simpler
+    // reason that it has no metric radius at all, so this is the identity unless
+    // ATURAN_METRIC_RADIUS is set, and the shared limiter reproduces the m.rad.z[i] the
+    // hand-written copy used, exactly.
+    double metricRadius(double rm){
+        static const double R_km = [](){
+            const char* e = getenv("ATURAN_METRIC_RADIUS"); return e ? atof(e) : 0.0; }();
+        if(!(R_km > 0.0)) return rm;
+        return rm + (R_km / L_atm - 1.0);
+    }
+
+    // The model's own floor on sin(theta) in the METRIC. ATURAN declares none, as ATSAT and
+    // ATNEPT do not; it exists so ATPhys::polar_divisor_floor<Planet>() compiles. With
+    // ATURAN_SINTHE_TRACK unset that function returns the literal 0.4 the hand-written limiter
+    // used, so this value is not reached by default.
+    static double sinthe_min(){
+        static const double v = [](){
+            const char* e = getenv("ATURAN_SINTHE_MIN");
+            const double x = e ? atof(e) : 0.0;
+            return (x >= 0.0 && x < 1.0) ? x : 0.0;
+        }();
+        return v;
+    }
 
     // What the panorama .vts prints in its "Temperature" array — degrees Celsius, as ATJUP and
     // ATNEPT do; ATSAT writes kelvin/10, and one array name carrying two quantities across four
