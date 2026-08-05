@@ -22,22 +22,45 @@
  * planet's own header, where they can be read next to the rest of its parameters.
  *
  * Everything below — C_cia, he_ratio, the four kappa values, tau_cloud_cap, opac_cal, k_sw — is a
- * GREY-OPACITY CALIBRATION, not a measurement. One set of numbers is in force on both planets
+ * GREY-OPACITY CALIBRATION, not a measurement. One set of numbers is in force on all four planets
  * today, and they were tuned on Jupiter: C_cia so that CIA alone puts Jupiter's thermal
  * photosphere near 0.5 bar, opac_cal so that the combined opacity brings it to 0.25-0.35 bar.
  * Both of those are now measured and printed every run, by the diagnostic below, and as of the
  * recalibration recorded there Jupiter hits both.
  *
- * THAT TUNING IS NOT KNOWN TO TRANSFER, and the same diagnostic says so out loud. The CIA layer
- * optical depth goes as comp * P^2 / (T*g), and Saturn's gravity is 2.6x weaker and its H2
- * fraction larger, both of which deepen tau for the same coefficient. Saturn's photosphere with
- * these numbers sits at 0.068 bar — a factor of 5 above Jupiter's 0.326, in a model radiating
- * 1.33 W/m2 against the 4.45 that enters it. Whether that is Saturn or a symptom is not a question
- * this file answers; what it does is make sure the question is visible.
+ * THAT TUNING DOES NOT TRANSFER, and it is now measured on all four rather than suspected on one.
+ * Every model run single-threaded with <TAG>_RADIATION=1, two radiation calls each (ATSAT runs its
+ * on alternate iterations, so nm=4 there):
  *
- * They stay here, as one shared calibration, precisely so that stays ONE question rather than two
+ *      planet   tau=1 at    T(tau=1)   T_eff(in)      OLR      in     OLR/B   OLR/in
+ *      ATJUP     0.3263 bar  119.30 K   124.66 K   12.181   13.695    1.060    0.889
+ *      ATSAT     0.0660      63.13       94.12      1.306    4.450    1.450    0.294
+ *      ATURAN    0.1699      70.93       59.04      1.728    0.689    1.204    2.508
+ *      ATNEPT   17.2287     116.10       59.28     10.256    0.700    0.996   14.651
+ *
+ * READ THE LAST TWO COLUMNS AGAINST EACH OTHER, because that is what the photosphere temperature
+ * was added to make possible. OLR/B is the SCHEME's excess over a blackbody at the level it calls
+ * the photosphere; OLR/in is the whole error. The scheme term stays between 0.996 and 1.450 across
+ * four planets whose total error spans a factor of FIFTY. The two-stream sum is not the variable —
+ * the temperature of the column it is handed is. On Neptune the scheme term is 0.996: the emission
+ * is a blackbody at 116.10 K to within 0.13 K, and every bit of the 14.65x is that 116.10 K.
+ *
+ * THE SIGN IS NOT COMMON EITHER, so "the grey scheme over-emits" was never true as a general
+ * statement. Jupiter and Saturn UNDER-emit, with photospheres 5.4 K and 31.0 K too COLD; Uranus and
+ * Neptune OVER-emit, 11.9 K and 56.8 K too WARM. The discriminator is where tau reaches 1: too
+ * opaque puts the photosphere high and cold (Saturn, 0.066 bar), too transparent puts it deep and
+ * hot (Neptune, 17.2 bar — fifty times deeper than any other planet here, and the single number on
+ * this table most obviously wrong). Jupiter, the planet it was tuned on, lands in its own target
+ * band and is the only one whose photosphere temperature is close to right.
+ *
+ * ONE MORE SPLIT WORTH NOTING: the two gas giants are STATIONARY between radiation calls (ATJUP
+ * 119.30 -> 119.29 K, ATSAT 63.13 -> 63.14 K) while both ice giants climb every call (ATURAN +2.1
+ * K, ATNEPT +8.4 K). A calibration question and a drifting-profile question are being asked at the
+ * same time on ATURAN and ATNEPT, and only the first of them is about this file.
+ *
+ * They stay here, as one shared calibration, precisely so that stays ONE question rather than four
  * independently drifting answers. The per-planet lever is the runtime knob
- * (<TAG>_CIA_STRENGTH, <TAG>_OPACITY_STRENGTH), not a second copy of the constant. The day either
+ * (<TAG>_CIA_STRENGTH, <TAG>_OPACITY_STRENGTH), not a second copy of the constant. The day any
  * planet is genuinely calibrated on its own measurements, its coefficient moves up into its model
  * header alongside F_int and stops being shared — and that move should be a commit that says so.
  *
