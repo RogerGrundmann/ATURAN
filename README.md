@@ -96,15 +96,116 @@ make clean
 The `param.py` script auto-generates several `.inc` / `.pyx` files that parameterise the
 model; it runs automatically as part of the build whenever `param.py` itself changes.
 
+### Shared physics headers
+
+Eleven headers in `planet/` are **byte-identical across ATJUP, ATSAT, ATNEPT and ATURAN**:
+
+```
+ATPhys.h  BoundaryConditions.h  ConvectiveAdjustment.h  FluxLimiter.h  ParaViewWriter.h
+Precipitation.h  PressureSolver.h  Radiation.h  Reporting.h  SaturationAdjustment.h  Turbulence.h
+```
+
+There is no submodule and no symlink holding them together — Synology Drive has silently reverted
+a working tree once, and a submodule costs friction on every clone. They are plain copies, and
+`planet/SHARED.md5` is what makes a divergence loud:
+
+```bash
+make check-shared
+```
+
+Editing one means: edit it in one repo, copy it to the other three, regenerate its line in **all
+four** manifests, and rebuild each.
+
+**`make check-shared` cannot catch everything, and this is the part to read before trusting it.**
+It verifies a repo against *its own* manifest, so two repos holding different copies of the same
+header both report OK — a state that has already occurred once. The check that does catch it is a
+diff between repos, which is why the checksum lines are kept sorted by filename:
+
+```bash
+diff ../ATJUP/planet/SHARED.md5 planet/SHARED.md5
+```
+
+---
+
+## Optional modules
+
+Every module is **off by default** and a stock run is unaffected by its presence. Set the
+environment variable to enable. All of them fill diagnostic arrays; none feeds back into the
+temperature equation on this model — there is no `ATURAN_RAD_COUPLING`, unlike ATJUP.
+
+**Radiation** — grey two-stream, shared `Radiation.h`
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ATURAN_RADIATION` | 0 | run the solve; fills `Q_rad`, `radiation`, `epsilon` |
+| `ATURAN_SOLAR` | 1 | absorbed shortwave channel (only acts with `ATURAN_RADIATION`) |
+| `ATURAN_SOLAR_STRENGTH` | 1.0 | scale the absorbed insolation |
+| `ATURAN_SW_TAU_PER_BAR` | 1.0 | move the shortwave absorption level |
+| `ATURAN_CIA_STRENGTH` | 1.0 | scale the H₂/He collision-induced opacity |
+| `ATURAN_OPACITY_STRENGTH` | 1.0 | scale the gas-band and cloud opacity |
+
+**Microphysics and turbulence**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ATURAN_PRECIP` | 0 | precipitation scheme; fills `P_*`, `Q_precip`, `S_precip_*` (diagnostic only here — nothing reads `S_precip_*`) |
+| `ATURAN_TURB` | 0 | run the closure |
+| `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
+| `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
+| `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
+| `ATURAN_SATADJ` | *see code* | mirrored saturation adjustment |
+
+**Numerics and experiment knobs**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
+| `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
+| `ATURAN_PRESS_SOLVER` | *see code* | pressure-solver selection |
+| `ATURAN_STEADY` | 1 | steady-state query in the report |
+| `ATURAN_LOCAL_RHO`, `ATURAN_METRIC_RADIUS`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
+
+---
+
+## Diagnostics
+
+Printed at the `checkpoint` cadence:
+
+- **printMinMax** — max/min with location for every prognostic and diagnostic field, including the
+  radiation trio (`radiation`, `Q_rad`, `emissivity`), the turbulence fields and the precipitation
+  fluxes. All read zero when their module is off, and are printed regardless: an absent array and a
+  zero array look the same, and only one of them means the writer works.
+- **Equatorial column profile** — `i`, `p[bar]`, `T[K]`, `eps`, `netRad`, `Q_rad` from the model top
+  down to the deep boundary. This is the diagnostic that localises profile faults; a column *mean*
+  cannot. It found a defect on ATNEPT where the top of the domain sat at 15 bar, which every
+  column-averaged number had reported as a confident 17.2287 bar photosphere.
+- **Photosphere line** (with `ATURAN_RADIATION=1`) — mean OLR against the input budget, the τ=1
+  level in bar, and the temperature there beside the blackbody flux it implies. The two temperature
+  gaps answer different questions: `T(τ=1) − T_eff(OLR)` is the *scheme's* excess, while
+  `T(τ=1) − T_eff(in)` is how far the *column* sits from the planet's energy budget.
+- **ParaView** — `Radiation`, `Q_rad_mW_m3` and `Emissivity`, plus the turbulence six and the
+  precipitation eleven, in all four views (panorama `.vts`; radial, zonal, longitudinal `.vtk`).
+
 ---
 
 ## Usage
 
-### Command-line
+### Command-line — note the TWO arguments
 
 ```bash
-./cli/uran uranus/config_aturan.xml
+./cli/uran <path> <config file name>
+./cli/uran . config_aturan.xml            # config in the current directory
 ```
+
+A single combined path fails with `couldn't load config file inside cUranusModel`. This is the
+reverse of ATOM's `cli/atm`, and the same convention ATSAT and ATNEPT use.
+
+```bash
+OMP_NUM_THREADS=12 ./cli/uran . config_aturan.xml > run.log 2>&1
+```
+
+Runs in this repository's measurements are single-threaded (`OMP_NUM_THREADS=1`) so that results
+are bit-reproducible and byte-comparisons between builds mean something.
 
 ### Python
 
@@ -120,6 +221,44 @@ model.run()
 
 Output is written as VTK / VTS files for visualisation in ParaView (panorama, sphere,
 radial, zonal, and longitudinal cross-sections).
+
+---
+
+## Known limitations
+
+None of these stops a run; all of them affect what a result means.
+
+1. **There is an unopposed heating excess, and it is the highest-value open item.** Run to 224
+   iterations with the radiation diagnostic on, the τ=1 photosphere settles at **136.45 K against a
+   T_eff(in) of 59.04 K** — 77 K too warm — emitting **30× the planet's energy budget** and still
+   climbing at +0.16 K/iteration. Until this is found, **the opacity constants cannot be judged
+   against this model at all**: a photosphere 77 K too warm says nothing about kappa.
+
+2. **That number got worse when a real bug was fixed, and the previous one was not better.** Before
+   the methane-viscosity correction this model read 7.591× — an artefact of two errors partly
+   cancelling. `mue_ch4` held methane's viscosity in *centipoise* as if it were Pa·s, so the
+   mass-weighted `mue_mix` came out ~150× too large, and on this model `mue_mix` sets the species
+   diffusivities and hence the diffusive-enthalpy sink in `rhs_t`. That sink, ~150× overweighted, was
+   holding the column down against the heating excess above. Correcting it unmasked the excess
+   rather than causing it.
+
+3. **`ATURAN_THERMAL_MASSFLUX` is a measurement instrument, not a fix.** Setting it to 0 removes the
+   sink entirely and the model runs away harder (34× at 224 iterations), so the term is load-bearing
+   even though its form is questionable: it is a flux times a temperature *gradient magnitude*, with
+   an absolute value on one component only, so it cannot change sign to oppose a runaway.
+
+4. **The integrator's temperature floor has been reached in real runs.** `t_min_K()` = 7.5 K was
+   once recorded as never engaging, on the evidence of a 2-iteration run; over 224 iterations with
+   the pre-fix viscosity it engaged in 20 of 28 checkpoints. It is a guard against a NaN, not a
+   dormant one, and a run that touches it is reporting a collapse, not a temperature.
+
+5. **The radiation, precipitation and turbulence modules are diagnostic-only here.** They fill their
+   arrays and nothing reads them back: there is no `ATURAN_RAD_COUPLING`, `S_precip_*` reaches no
+   RHS, and `ATURAN_TURB_COUPLING` defaults to 0. Switching a module on changes plots, not physics.
+
+6. **The grey opacity is Jupiter's calibration, not Uranus's.** `C_cia` and `opac_cal` were tuned so
+   that Jupiter's photosphere lands at 0.25–0.35 bar. Nothing has recalibrated them here, and the
+   per-planet lever is the runtime knob, not a second copy of the constant.
 
 ---
 
