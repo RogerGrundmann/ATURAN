@@ -313,11 +313,37 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
                          ? turb_coupling * std::max(0.0, nue.x[i][j][k]) : 0.0;
     const double nue_t_s = nue_t / Pr_t;      // scalar (heat / species) eddy diffusivity
 
+    // ATURAN_THERMAL_MASSFLUX scales the diffusive-enthalpy sink below. DEFAULT 1.0, so the
+    // model is unchanged unless it is set; 0.0 removes the term, which is what ATJUP's rhs_t does
+    // permanently (it carries radiation_t + precip_t there and no thermalmassflux term at all).
+    //
+    // IT IS A KNOB BECAUSE THE TERM DOMINATES rhs_t ON THE ICE GIANTS BY ORDERS OF MAGNITUDE.
+    // Measured at i=30, j=90, k=180, single-threaded, against the other three contributions:
+    //
+    //      model    pressure   transport   diffusion    chemical    thermalmassflux
+    //      ATSAT     +1.3e-03   +1.6e-01    -4.3e-03    +1.6e-01      -0.163
+    //      ATNEPT    +9.4e-07   +7.9e-03    -1.4e-01    +3.8e+01     -37.874
+    //      ATURAN    -1.9e-07   +7.8e-04    +3.5e-02    -1.2e+02    +119.450
+    //
+    // On ATSAT it BALANCES the transport term, which is what a physical enthalpy flux should do.
+    // On the ice giants it is three to six orders above every other term and simply sets rhs_t.
+    //
+    // The dominant part is the DIFFUSIVE-ENTHALPY product, not the reaction: measured at that cell
+    // the reaction part is exactly zero (all w_* = 0) and the whole of thermalmassflux comes from
+    //     (j_nh3*cp_nh3 + j_h2s*cp_h2s + j_nh4sh*cp_nh4sh) * (dtdr + |dtdthe|/rm + dtdphi/rmsinthe)
+    // a flux multiplied by a TEMPERATURE GRADIENT — so a steeper gradient drives more cooling,
+    // which steepens the gradient. On ATURAN that feedback nucleates a cold front near 1.5 bar and
+    // advances it one grid cell per iteration until cells reach t_min_K() = 7.5 K, leaving a hole
+    // at ~2.7 bar with a decoupled warm blob above it whose top is what the photosphere diagnostic
+    // then reads. See the measurement in the commit that added this knob.
+    static const double tmf_scale = [](){
+        const char* e = getenv("ATURAN_THERMAL_MASSFLUX"); return e ? atof(e) : 1.0; }();
+
     rhs_t.x[i][j][k] =
         + pressure_t
         - transport_t
         + diffusion_t / (re * pr) + diffusion_t * nue_t_s
-        - chemical_reaction * thermalmassflux.x[i][j][k];
+        - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k];
 
     // Sponge layer: quadratic Rayleigh damping over the top quarter of the domain.
     // frac = 0 at i_sponge_start, 1 at i=im-1 → damping rate = alpha_sponge * frac².
