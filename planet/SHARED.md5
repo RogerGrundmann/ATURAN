@@ -1,40 +1,37 @@
-# Checksums of the SHARED headers — files that must be BYTE-IDENTICAL in every planet model
-# (ATJUP, ATSAT, ATNEPT, and ATURAN as they arrive here).
+# Checksums of the SHARED headers — files that must be BYTE-IDENTICAL in every planet model:
+# ATJUP, ATSAT, ATNEPT and ATURAN. All ELEVEN are present in all four; the porting that this
+# header used to track the progress of is finished, and the lists of what had "still to come"
+# are gone with it.
 #
 # There is no submodule and no symlink holding them together: symlinks are not safe here, because
 # Synology Drive has silently reverted a working tree once already, and a submodule costs
 # workflow friction on every clone. So the copies are plain files and THIS manifest is what makes
 # a divergence loud instead of silent. `make check-shared` verifies it.
 #
-# Editing a shared header means: edit it in one repo, copy it to the others, regenerate this
-# manifest in ALL of them (keeping this header), and rebuild each.
+# Editing a shared header means: edit it in one repo, copy it to the other three, regenerate the
+# changed line in ALL FOUR manifests (keeping this header), and rebuild each.
 #
-# NOTE, and it is the reason to read this before trusting a green check: `make check-shared`
+# NOTE, AND IT IS THE REASON TO READ THIS BEFORE TRUSTING A GREEN CHECK: `make check-shared`
 # verifies a repo against ITS OWN manifest. It cannot see two repos holding DIFFERENT copies of
 # the same shared header — that state has already occurred once, and both repos reported OK. The
-# only thing that catches it is diffing the SHARED.md5 files of the repos against each other.
-# With four models that matters more than it did with two.
+# only thing that catches it is diffing the SHARED.md5 files of the repos against each other:
 #
-# TWO OF THE ELEVEN ARE HERE. ATPhys.h and ParaViewWriter.h arrived together with the shared
-# ParaView writer. Still to come: BoundaryConditions.h, ConvectiveAdjustment.h, FluxLimiter.h,
-# Turbulence.h, Precipitation.h, Radiation.h, PressureSolver.h, SaturationAdjustment.h and
-# Reporting.h. This file was created EMPTY one commit before the first of them, so that the guard
-# was never the thing added last: every header adds its line here in the SAME commit that copies
-# it, and `make check-shared` has been green from before there was anything to check. It still
-# reports the empty case in its own words, because an empty manifest and a passing one must not
-# look alike.
+#     diff <(grep -E '^[0-9a-f]{32}' ../ATJUP/planet/SHARED.md5) \
+#          <(grep -E '^[0-9a-f]{32}' planet/SHARED.md5)
 #
-# To add one: copy the header from ATNEPT (the most recently ported sibling), then
-#     md5sum planet/<Header>.h >> planet/SHARED.md5
-# and confirm the resulting line matches the sibling's entry for that file.
+# The checksum lines below are kept SORTED BY FILENAME in every repo precisely so that this is a
+# plain diff with no sorting step to forget. With four models it matters more than it did with two.
+#
+# If keeping four copies in step ever becomes tedious enough to resent, that is the signal to
+# promote them to a shared repository.
 cb1c5d6d2a17ab71a3325c602833feb2  planet/ATPhys.h
-52a7a800875443e2f8f3ebfe9506c6cd  planet/ParaViewWriter.h
+51330a5c2f63f3fd4a8248b5f4965e9c  planet/BoundaryConditions.h
 97a14dd488fb7fd821f87905bff64eaf  planet/ConvectiveAdjustment.h
 edf00eb9e4a480535cfd4d90339fa7ac  planet/FluxLimiter.h
-5643f3828886f0ae0935dec27d002a70  planet/SaturationAdjustment.h
-fc8734f6d8e2579b3045af094f4b12b4  planet/PressureSolver.h
-f29ab46065a5379ae8db538e3c23b0bb  planet/Reporting.h
-51330a5c2f63f3fd4a8248b5f4965e9c  planet/BoundaryConditions.h
-7a5f2ed1c4687db310c07a573f717d0d  planet/Turbulence.h
-82fa4fe2047404f1dcc69f623f15ac4a  planet/Radiation.h
+52a7a800875443e2f8f3ebfe9506c6cd  planet/ParaViewWriter.h
 17957559c41bdc64b2cd240ef19bc77a  planet/Precipitation.h
+fc8734f6d8e2579b3045af094f4b12b4  planet/PressureSolver.h
+82fa4fe2047404f1dcc69f623f15ac4a  planet/Radiation.h
+f29ab46065a5379ae8db538e3c23b0bb  planet/Reporting.h
+5643f3828886f0ae0935dec27d002a70  planet/SaturationAdjustment.h
+7a5f2ed1c4687db310c07a573f717d0d  planet/Turbulence.h
