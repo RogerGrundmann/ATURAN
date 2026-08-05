@@ -2,11 +2,106 @@
 
 using namespace std;
 
+/*
+ * Area-weighted horizontal mean, at each level, of the expression the buoyancy takes the anomaly
+ * of. Mirrors ATSAT's computeBuoyancyRefLevel(), which mirrors ATJUP's.
+ *
+ * The mean has to be the mean OF the quantity whose anomaly is taken, or the anomaly no longer has
+ * zero mean at that height — which is the whole point: with it subtracted, only horizontal density
+ * contrasts drive vertical motion and hydrostatic balance is left to carry the mean. sin(theta) is
+ * the spherical area weight; cells with no positive temperature are skipped, which also catches
+ * NaN, and a non-finite contribution is dropped rather than poisoning the level.
+ */
+void cUranusModel::computeBuoyancyRefLevel(){
+    if((int)buoy_ref_level.size() != im) buoy_ref_level.assign(im, 0.0);
+
+    #pragma omp parallel for schedule(static)
+    for(int i = 0; i < im; i++){
+        double sum = 0.0, wsum = 0.0;
+        for(int j = 0; j < jm; j++){
+            const double wgt = sin(the.z[j]);              // spherical area weight
+            for(int k = 0; k < km; k++){
+                if(!(t.x[i][j][k] > 0.0)) continue;        // also catches NaN
+                const double b = g * p_stat.x[i][j][k]
+                               / (r_mix * R_mix * t.x[i][j][k] * t_ref);
+                if(!std::isfinite(b)) continue;
+                sum  += wgt * b;
+                wsum += wgt;
+            }
+        }
+        buoy_ref_level[i] = (wsum > 0.0) ? sum / wsum : 0.0;
+    }
+}
+
+/*
+ * Hydrostatic pressure perturbation: p_hydro(r) = integral of the buoyancy ANOMALY from the base,
+ * so d(p_hydro)/dr = buoyancy by construction. Ported from ATJUP's computeHydrostaticPressure().
+ *
+ * THE PROBLEM IT SOLVES, measured on this model rather than assumed. The buoyancy term in rhs_u is
+ * ~1e5 too small because p_stat is in bar where the ideal-gas density needs pascals. Restoring that
+ * factor was measured over 224 iterations and moved the answer 0.5 % — from OLR/in 30.093 to
+ * 30.247 — because the pressure projection absorbs a larger radial body force and returns a
+ * matching dpdr. The balance is enforced numerically either way, so nothing is left over to drive
+ * vertical motion, and this model's radial velocity sits at ~1e-4 where ATSAT's is ~1e-1. With no
+ * overturning, thermal diffusion flattens the column unopposed.
+ *
+ * Splitting it off analytically is what changes that: the radial force balances exactly and by
+ * construction, and what enters the momentum equation is the HORIZONTAL gradient of p_hydro —
+ * smaller by the 1/r that the horizontal derivative carries, and the part that physically drives a
+ * circulation. p_dyn is left with the barotropic and non-hydrostatic remainder, which is the part
+ * it can actually represent.
+ *
+ * The base is the DEEP boundary: the reference isobaric surface, where the gas is densest and
+ * horizontal pressure contrasts are hardest to sustain, while the model top is an arbitrary cut
+ * through a continuing atmosphere. ATURAN_HYDRO_REF=1 integrates downward from the top instead so
+ * the choice can be measured; it is not the intended configuration.
+ */
+void cUranusModel::computeHydrostaticPressure(){
+    static const bool ref_top = [](){
+        const char* e = getenv("ATURAN_HYDRO_REF"); return e && atoi(e) != 0; }();
+    // The same factor rhs_u puts on the buoyancy, read the same way, so the two cannot drift apart.
+    static const double buoy_scale_local = [](){
+        const char* e = getenv("ATURAN_BUOY_SCALE"); return e ? atof(e) : 1.0; }();
+
+    const double nd = 1.0e5 * L_atm / (u_0 * u_0);
+
+    #pragma omp parallel for collapse(2) schedule(static)
+    for(int j = 0; j < jm; j++){
+        for(int k = 0; k < km; k++){
+            auto buoy = [&](int i)->double{
+                const double T = t.x[i][j][k];
+                if(!(T > 0.0)) return 0.0;
+                const double b = g * p_stat.x[i][j][k] / (r_mix * R_mix * T * t_ref)
+                               - buoy_ref_level[i];
+                const double f = -nd * buoy_scale_local * buoyancy * b;
+                return std::isfinite(f) ? f : 0.0;
+            };
+            if(!ref_top){
+                p_hydro.x[0][j][k] = 0.0;
+                for(int i = 1; i < im; i++)
+                    p_hydro.x[i][j][k] = p_hydro.x[i-1][j][k]
+                                       + 0.5 * (buoy(i-1) + buoy(i)) * dr;
+            } else {
+                p_hydro.x[im-1][j][k] = 0.0;
+                for(int i = im-2; i >= 0; i--)
+                    p_hydro.x[i][j][k] = p_hydro.x[i+1][j][k]
+                                       - 0.5 * (buoy(i+1) + buoy(i)) * dr;
+            }
+        }
+    }
+
+}
+
 void cUranusModel::RungeKuttaUran(){
     cout << endl << "      ATURAN: RungeKuttaUran" << endl;
 
 
     auto begin = std::chrono::high_resolution_clock::now();
+
+    // The buoyancy base state and the hydrostatic pressure built from it, refreshed once per RK4
+    // step before any stage reads them. Both are inert unless ATURAN_HYDRO_SPLIT is set.
+    computeBuoyancyRefLevel();
+    computeHydrostaticPressure();
 
     // Precompute sin/cos tables — depend only on j.
     // sinthe is clamped to a minimum to prevent 1/sin²θ blow-up near the poles.
@@ -65,7 +160,14 @@ void cUranusModel::RungeKuttaUran(){
         for(int i = 1; i < im-1; i++){
             for(int j = 1; j < jm-1; j++){
             CellGeometry geo;
-            geo.rm      = rad.z[i];
+            // metricRadius(): identity unless ATURAN_METRIC_RADIUS is set, so this is inert by
+            // default. See the note at metricRadius() in the model header — this model has no
+            // metric radius, i.e. rad.z runs 1..2 and the metric puts the planet's surface
+            // L_atm from its centre instead of R, making every HORIZONTAL derivative
+            // R/L_atm times too large. ATJUP measured the same defect on itself as 499x and
+            // fixed it by shifting rad.z at initialisation; ATSAT routes it through this
+            // accessor, as here.
+            geo.rm      = metricRadius(rad.z[i]);
             geo.rm2     = geo.rm * geo.rm;
             geo.sinthe  = sinthe_tbl[j];
             geo.sinthe2 = geo.sinthe * geo.sinthe;

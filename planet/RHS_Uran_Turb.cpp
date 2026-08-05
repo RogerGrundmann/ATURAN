@@ -350,11 +350,66 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     const double frac_sp = std::max(0.0, (double)(i - (im - 1) * 3 / 4) / (double)((im - 1) / 4));
     const double sponge  = alpha_sponge * frac_sp * frac_sp;
 
+    // ATURAN_BUOY_SCALE scales the buoyancy term in rhs_u below. DEFAULT 1.0 — the model is
+    // unchanged unless it is set. Same name and semantics as ATJUP's knob.
+    //
+    // IT EXISTS BECAUSE THE TERM AS WRITTEN IS ~1e5 SMALLER THAN IT SHOULD BE. p_stat is in BAR;
+    // the ideal-gas density p/(R*T) needs pascals, so the expression wants a factor 1e5. The very
+    // same expression carries that 1e5 where it fills the DIAGNOSTIC BuoyancyForce array in
+    // Forces(); only the momentum equation is missing it. Measured at the equator, iteration 1:
+    //
+    //      i    -dpdr        buoyancy(as written)   shortfall   buoyancy*1e5   vs -dpdr
+    //     10   +7.77e-02        +2.23e-06            3.5e4x      +2.23e-01       2.87
+    //     25   +4.51e-02        +1.06e-06            4.3e4x      +1.06e-01       2.35
+    //     35   +2.55e-02        +4.28e-07            6.0e4x      +4.28e-02       1.68
+    //
+    // So buoyancy is not fighting the pressure gradient and losing — it is absent. Restored it
+    // would be 1.7-2.9x the pressure gradient, a first-order force. That is why this model's radial
+    // velocity is ~1e-4 where ATSAT's is ~1e-1, why there is no overturning circulation, and why
+    // thermal diffusion flattens the column unopposed.
+    //
+    // WHY A KNOB AND NOT A FIX. The commented-out line directly below records that a correctly
+    // scaled density-anomaly buoyancy "leads to ozillations in the upper region". The version left
+    // in place is stable precisely BECAUSE it does nothing, so restoring the factor may reproduce
+    // exactly what was fled from. Both siblings that behave replaced the raw rho*g rather than
+    // rescaling it — ATSAT with an anomaly against buoy_ref_level, ATJUP with an exact hydrostatic
+    // split — and ATJUP's nondimensionalisation carries 1.0e5*(L_atm*1.0e3)/(u_0*u_0), which is not
+    // the same factor this expression is short by. Measure before believing any of it.
+    static const double buoy_scale = [](){
+        const char* e = getenv("ATURAN_BUOY_SCALE"); return e ? atof(e) : 1.0; }();
+
+    // ---- Hydrostatic split (ATURAN_HYDRO_SPLIT, default 0 = off, bit-identical) ----
+    //
+    // With the split on the radial buoyancy is carried by p_hydro instead of appearing in rhs_u,
+    // and what enters the momentum equation from it is the HORIZONTAL gradient of that pressure.
+    // Those two changes are the whole of it: rhs_u loses its buoyancy term, rhs_v and rhs_w gain a
+    // much smaller one, and the difference between those magnitudes is the point.
+    //
+    // ATURAN_BUOY_REF=1 without the split subtracts buoy_ref_level from the buoyancy in place —
+    // ATSAT's treatment — so the anomaly and the split can be attributed separately.
+    static const int hydro_split = [](){
+        const char* e = getenv("ATURAN_HYDRO_SPLIT"); return e ? atoi(e) : 0; }();
+    static const int buoy_ref_on = [](){
+        const char* e = getenv("ATURAN_BUOY_REF"); return e ? atoi(e) : 0; }();
+
+    // Buoyancy as it enters rhs_u. Unchanged by default; zero when the split carries it.
+    double buoyancy_u = 0.0;
+    if(hydro_split == 0 && t.x[i][j][k] > 0.0){
+        const double b_raw = g * (p_stat.x[i][j][k] + p_dyn.x[i][j][k])
+                           / (r_mix * R_mix * t.x[i][j][k] * t_ref);
+        buoyancy_u = buoy_scale * buoyancy * (L_atm / (u_0 * u_0))
+                   * (buoy_ref_on != 0 ? (b_raw - buoy_ref_level[i]) : b_raw);
+    }
+    double dphdthe_term = 0.0, dphdphi_term = 0.0;
+    if(hydro_split != 0){
+        dphdthe_term = (p_hydro.x[i][j+1][k] - p_hydro.x[i][j-1][k]) * inv_2dthe * inv_rm;
+        dphdphi_term = (p_hydro.x[i][j][k+1] - p_hydro.x[i][j][k-1]) * inv_2dphi * inv_rmsinthe;
+    }
+
     rhs_u.x[i][j][k] =
         - dpdr_term
 //        + buoyancy * (L_atm / (u_0 * u_0)) * g * (1.0 - rho_mix.x[i][j][k] / r_mix) // leads to ozillations in the upper region
-        + buoyancy * (L_atm / (u_0 * u_0)) * g * (p_stat.x[i][j][k] + p_dyn.x[i][j][k])         // no oszillations
-                      / (r_mix * R_mix * t.x[i][j][k] * t_ref)
+        + buoyancy_u                                          // see the hydrostatic-split note above
         - transport_u
         + diffusion_u / re_eff + diffusion_u * nue_t
         - Coriolis    * scale_Cor * Coriolis_rad
@@ -363,6 +418,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     rhs_v.x[i][j][k] =
         - dpdthe_term
+        - dphdthe_term
         - transport_v
         + diffusion_v / re_eff + diffusion_v * nue_t
         - Coriolis    * scale_Cor * Coriolis_the
@@ -370,6 +426,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     rhs_w.x[i][j][k] =
         - dpdphi_term
+        - dphdphi_term
         - transport_w
         + diffusion_w / re_eff + diffusion_w * nue_t
         - Coriolis    * Coriolis_phi;

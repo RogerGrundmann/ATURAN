@@ -582,6 +582,7 @@ void cUranusModel::resetArrays(){
     thermalmassflux.initArray(im, jm, km, 0.0);   // thermal massflux_h2s
 
     p_dyn.initArray(im, jm, km, pa);                // dynamic pressure
+    p_hydro.initArray(im, jm, km, 0.0);             // hydrostatic pressure perturbation
     p_dynn.initArray(im, jm, km, pa);               // dynamic pressure, previous iteration
 
     // Turbulence closure fields (stage one). Allocated unconditionally so the arrays exist for
