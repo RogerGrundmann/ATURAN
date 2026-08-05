@@ -29,51 +29,60 @@
  * recalibration recorded there Jupiter hits both.
  *
  * THAT TUNING DOES NOT TRANSFER, and it is now measured on all four rather than suspected on one.
- * Every model run single-threaded with <TAG>_RADIATION=1, two radiation calls each (ATSAT runs its
- * on alternate iterations, so nm=4 there):
+ * Every model run single-threaded to nm = 224 with <TAG>_RADIATION=1, all other knobs off. Values
+ * are the LAST sample; dT/diter is the drift of the photosphere temperature per ITERATION over the
+ * final 32, which is the column that says how much the rest of the row can be trusted:
  *
- *      planet   tau=1 at    T(tau=1)   T_eff(in)      OLR      in     OLR/B   OLR/in
- *      ATJUP     0.3263 bar  119.30 K   124.66 K   12.181   13.695    1.060    0.889
- *      ATSAT     0.0660      63.13       94.12      1.306    4.450    1.450    0.294
- *      ATURAN    0.1699      70.93       59.04      1.728    0.689    1.204    2.508
- *      ATNEPT    0.0603      81.37       59.28      2.340    0.700    0.942    3.343
+ *      planet      tau=1  T(tau=1)  T_eff(in)      OLR   OLR/B  OLR/in   dT/diter
+ *      ATJUP      0.3214    117.29     124.66   11.463   1.068   0.837    -0.0084
+ *      ATSAT      0.0670     63.38      94.12    1.234   1.349   0.277    +0.0012
+ *      ATURAN     0.1658     99.90      59.04    5.230   0.926   7.591    -0.0088
+ *      ATNEPT     0.0380     78.65      59.28    2.002   0.923   2.860    +0.0784
  *
- * ATNEPT'S ROW IS POST-FIX and the previous one is worth keeping in view, because it is the clearest
- * demonstration on this table of what the photosphere diagnostic is for. It read 17.2287 bar /
- * 116.10 K / 14.651, and none of that was opacity: init_PressureStatic anchored a p_bottom taken at
- * T_bottom to a base of (T/t_ref) rather than (T/T_bottom), inflating Neptune's whole pressure field
- * by (T_bottom/t_ref)^n = 607x and putting the TOP of the domain at 15 bar. tau = 1 was being
- * reached in the first layer or two below the ceiling, so the scheme was reporting the top of the
- * grid and faithfully radiating the 116 K it found there. A calibration read of that row would have
- * been a search for an opacity error that did not exist.
+ * THE SLOPE COLUMN EXISTS BECAUSE THE FIRST VERSION OF THIS TABLE WAS MEASURED AT TWO ITERATIONS
+ * AND WAS WRONG. Not wrong about what it measured — wrong to be read as a steady state. ATURAN read
+ * 2.508 there and runs to 7.591, a factor of three; ATNEPT read 3.343 and runs to 2.860 by way of a
+ * peak at 85.35 K and a minimum of 69.03 K at iteration 85. The two gas giants barely moved
+ * (0.889 -> 0.837, 0.294 -> 0.277), which is exactly why the short run looked trustworthy. A row
+ * without a slope beside it cannot tell those two cases apart.
  *
- * READ THE LAST TWO COLUMNS AGAINST EACH OTHER, because that is what the photosphere temperature
+ * AND THE SPLIT IS NOT GAS GIANT AGAINST ICE GIANT, which is the reading the two-iteration table
+ * invited and this one refutes. ATJUP drifts -0.0084 K/iter and ATURAN -0.0088: the same, to within
+ * the last digit. ATSAT is the quiet one (+0.0012, last-10 spread 0.02 K). ATNEPT alone is an order
+ * of magnitude off any of them at +0.0784 with a spread of 0.72 K, and it is RISING again after
+ * turning at iteration 85 — it passed close to balance on the way through (OLR/in 1.663 near
+ * iteration 97) and left again. Three of four are quiescent; one is not; the family line is not
+ * where it looked.
+ *
+ * ATNEPT'S EARLIER ROW IS WORTH KEEPING IN VIEW, as the clearest demonstration on this table of what
+ * the photosphere diagnostic is for. It read 17.2287 bar / 116.10 K / 14.651, and none of that was
+ * opacity: init_PressureStatic anchored a p_bottom taken at T_bottom to a base of (T/t_ref) rather
+ * than (T/T_bottom), inflating Neptune's whole pressure field by (T_bottom/t_ref)^n = 607x and
+ * putting the TOP of the domain at 15 bar. tau = 1 was reached in the first layer or two below the
+ * ceiling, so the scheme reported the top of the grid and faithfully radiated the 116 K it found
+ * there. A calibration read of that row would have been a search for an opacity error that did not
+ * exist.
+ *
+ * READ THE LAST THREE COLUMNS AGAINST EACH OTHER, because that is what the photosphere temperature
  * was added to make possible. OLR/B is the SCHEME's excess over a blackbody at the level it calls
- * the photosphere; OLR/in is the whole error. The scheme term stays between 0.94 and 1.45 across
- * four planets whose total error still spans a factor of eleven. The two-stream sum is not the
- * variable — the temperature of the column it is handed is, and on Neptune it was not even the
- * temperature so much as WHICH LEVEL the column placed at that pressure.
+ * the photosphere; OLR/in is the whole error. Over 224 iterations and four planets the scheme term
+ * stays between 0.92 and 1.35 while the total error spans a factor of TWENTY-SEVEN, 0.277 to 7.591.
+ * The two ice giants land at 0.926 and 0.923 — the same to three digits — while differing by 2.7x in
+ * total error. The two-stream sum is not the variable. The temperature of the column it is handed
+ * is, and on Neptune it was not even the temperature so much as WHICH LEVEL sat at that pressure.
  *
  * THE SIGN IS NOT COMMON EITHER, so "the grey scheme over-emits" was never true as a general
- * statement. Jupiter and Saturn UNDER-emit, with photospheres 5.4 K and 31.0 K too COLD; Uranus and
- * Neptune OVER-emit, 11.9 K and 22.1 K too WARM. The discriminator is where tau reaches 1: too
- * opaque puts the photosphere high and cold (Saturn, 0.066 bar), too transparent puts it deep and
- * hot. All four now sit between 0.060 and 0.33 bar, which is the first time the four have been
- * comparable at all. Jupiter, the planet it was tuned on, lands in its own target band and is the
- * only one whose photosphere temperature is close to right.
+ * statement. Jupiter and Saturn UNDER-emit, with photospheres 7.4 K and 30.7 K too COLD; Uranus and
+ * Neptune OVER-emit, 40.9 K and 19.4 K too WARM. The discriminator is where tau reaches 1: too
+ * opaque puts the photosphere high and cold (Saturn, 0.067 bar), too transparent puts it deep and
+ * hot. All four now sit between 0.038 and 0.32 bar. Jupiter, the planet it was tuned on, lands in
+ * its own target band and is the only one whose photosphere temperature is close to right.
  *
- * ONE MORE SPLIT WORTH NOTING: the two gas giants are STATIONARY between radiation calls (ATJUP
- * 119.30 -> 119.29 K, ATSAT 63.13 -> 63.14 K) while both ice giants still move (ATURAN +2.1 K,
- * ATNEPT +2.7 K). A calibration question and a drifting-profile question are being asked at the
- * same time on ATURAN and ATNEPT, and only the first of them is about this file.
- *
- * AND ONE OPEN ODDITY, recorded rather than explained: post-fix ATNEPT's OLR FALLS between the two
- * calls (2.625 -> 2.340) while its photosphere temperature RISES (78.67 -> 81.37 K), which those
- * two numbers alone cannot both do under sigma*T^4. Its scheme term moves 1.209 -> 0.942 across the
- * pair, where every other planet's is stable to a few parts in a thousand. Two iterations from a
- * cold start is not a steady state and the pressure field underneath has just changed by 607x, so
- * this may simply be a column still settling — but it is the one number on this table that is not
- * yet understood, and it should not be quoted as a converged result.
+ * NOTE WHICH ICE GIANT IS NOW THE WORSE, because it reversed. At two iterations Neptune looked
+ * catastrophic (14.651) and Uranus mild (2.508). Run out, Uranus is the worst row on the table at
+ * 7.591 and has been quiescent since iteration 62, while Neptune sits at 2.860 and is still moving.
+ * A settled wrong answer and an unsettled one are different problems, and only the slope column
+ * distinguishes them.
  *
  * They stay here, as one shared calibration, precisely so that stays ONE question rather than four
  * independently drifting answers. The per-planet lever is the runtime knob
