@@ -18,6 +18,66 @@ using namespace std;
 // copies (namespace ParaViewUranus) were IDENTICAL code to ATSAT's, ATJUP's and ATNEPT's — the
 // whole difference was `for (` against `for(` and the /* */ separators between them. Four models
 // independently carried the same file-format code.
+// The precipitation eleven and the turbulence six, in ONE place so the four views cannot
+// drift apart — the same device ATSAT uses, and the reason its views have stayed in step.
+// These arrays were being filled and written NOWHERE on this model, exactly as the radiation
+// trio was: ParaView showed neither, so "the scheme changes no output" was unanswerable for
+// both. Names and scale factors are ATSAT's and ATJUP's verbatim, which is what lets a single
+// ParaView state file open a Jupiter, a Saturn, a Uranus and a Neptune panorama.
+//
+// All are ZERO unless the module that fills them is on (ATURAN_PRECIP, ATURAN_TURB). They are
+// written regardless: an absent array and a zero array look the same in ParaView, and only one
+// of those is a working writer.
+#define DUMP_TURB_PRECIP_3D(DUMP, IDX, F)                                      \
+    DUMP("P_rain", P_rain, 86400.0, IDX, F);   /* mm/day */               \
+    DUMP("P_snow", P_snow, 86400.0, IDX, F);                              \
+    DUMP("P_graupel", P_graupel, 86400.0, IDX, F);                        \
+    DUMP("P_nh3_rain", P_nh3_rain, 86400.0, IDX, F);                      \
+    DUMP("P_nh3_snow", P_nh3_snow, 86400.0, IDX, F);                      \
+    DUMP("P_nh3_graupel", P_nh3_graupel, 86400.0, IDX, F);                \
+    DUMP("P_ch4_rain", P_ch4_rain, 86400.0, IDX, F);                      \
+    DUMP("P_ch4_snow", P_ch4_snow, 86400.0, IDX, F);                      \
+    DUMP("P_ch4_graupel", P_ch4_graupel, 86400.0, IDX, F);                \
+    DUMP("P_nh4sh", P_nh4sh, 86400.0, IDX, F);                            \
+    DUMP("Q_precip", Q_precip, 1.0e3, IDX, F);   /* mW/m3 */              \
+    DUMP("tke", tke, u_0 * u_0, IDX, F);   /* m2/s2 */                    \
+    DUMP("disd", dis, 1.0, IDX, F);   /* nondimensional */                \
+    DUMP("nue_t", nue, u_0 * L_atm * 1.0e3, IDX, F);   /* m2/s */         \
+    DUMP("prod", prod, 1.0, IDX, F);                                      \
+    DUMP("tke_source", tke_source, 1.0, IDX, F);                          \
+    DUMP("dis_source", dis_source, 1.0, IDX, F);
+
+// Same list for the panorama .vts, whose dumper takes no slice index. Names carry their unit
+// as a suffix here because the .vts header must name every scalar in one attribute string,
+// where a bare "P_rain" gives the reader no way to know it is not kg/m2/s.
+#define DUMP_TURB_PRECIP_VTS(F)                                                \
+    dump_array("P_rain_mmd", P_rain, 86400.0, F);                         \
+    dump_array("P_snow_mmd", P_snow, 86400.0, F);                         \
+    dump_array("P_graupel_mmd", P_graupel, 86400.0, F);                   \
+    dump_array("P_nh3_rain_mmd", P_nh3_rain, 86400.0, F);                 \
+    dump_array("P_nh3_snow_mmd", P_nh3_snow, 86400.0, F);                 \
+    dump_array("P_nh3_graupel_mmd", P_nh3_graupel, 86400.0, F);           \
+    dump_array("P_ch4_rain_mmd", P_ch4_rain, 86400.0, F);                 \
+    dump_array("P_ch4_snow_mmd", P_ch4_snow, 86400.0, F);                 \
+    dump_array("P_ch4_graupel_mmd", P_ch4_graupel, 86400.0, F);           \
+    dump_array("P_nh4sh_mmd", P_nh4sh, 86400.0, F);                       \
+    dump_array("Q_precip_mW_m3", Q_precip, 1.0e3, F);                     \
+    dump_array("tke_m2s2", tke, u_0 * u_0, F);                            \
+    dump_array("dis_nd", dis, 1.0, F);                                    \
+    dump_array("nue_t_m2s", nue, u_0 * L_atm * 1.0e3, F);                 \
+    dump_array("prod_nd", prod, 1.0, F);                                  \
+    dump_array("tke_source_nd", tke_source, 1.0, F);                      \
+    dump_array("dis_source_nd", dis_source, 1.0, F);
+
+// The scalar names the .vts header must announce. A name here that is not written (or the
+// reverse) is not an error ParaView reports — it simply shows an empty array.
+#define PANORAMA_TURB_PRECIP_SCALARS                                           \
+    "P_rain_mmd P_snow_mmd P_graupel_mmd P_nh3_rain_mmd "                 \
+    "P_nh3_snow_mmd P_nh3_graupel_mmd P_ch4_rain_mmd P_ch4_snow_mmd "     \
+    "P_ch4_graupel_mmd P_nh4sh_mmd Q_precip_mW_m3 tke_m2s2 "              \
+    "dis_nd nue_t_m2s prod_nd tke_source_nd "                             \
+    "dis_source_nd "
+
 /*
  *
 */
@@ -32,7 +92,8 @@ void cUranusModel::paraview_panorama_vts(int n){
     // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ParaViewWriter<cUranusModel> pv(*this);
     ofstream Uranus_panorama_vts_File = pv.open_panorama(n,
-        "Temperature PressureDynamic PressureStatic NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce Q_Latent Q_Sensible BuoyancyForce Q_rad_mW_m3 Radiation ");
+        "Temperature PressureDynamic PressureStatic NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce Q_Latent Q_Sensible BuoyancyForce Q_rad_mW_m3 Radiation Emissivity "
+        PANORAMA_TURB_PRECIP_SCALARS);
     pv.panorama_velocity(Uranus_panorama_vts_File);
     pv.panorama_temperature(Uranus_panorama_vts_File);
     dump_array("u-component", u, u_0, Uranus_panorama_vts_File);
@@ -76,6 +137,8 @@ void cUranusModel::paraview_panorama_vts(int n){
     // unless ATURAN_RADIATION is set.
     dump_array("Q_rad_mW_m3", Q_rad, 1.0e3, Uranus_panorama_vts_File);
     dump_array("Radiation", radiation, 1.0, Uranus_panorama_vts_File);
+    dump_array("Emissivity", epsilon, 1.0, Uranus_panorama_vts_File);
+    DUMP_TURB_PRECIP_VTS(Uranus_panorama_vts_File);
 
     pv.close_panorama(Uranus_panorama_vts_File, n);
     return;
@@ -156,6 +219,8 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
     // both identically zero unless ATURAN_RADIATION is set.
     dump_radial("Q_rad_mW_m3", Q_rad, 1.0e3, i_radial, Uranus_vtk_radial_File);
     dump_radial("Radiation", radiation, 1.0, i_radial, Uranus_vtk_radial_File);
+    dump_radial("Emissivity", epsilon, 1.0, i_radial, Uranus_vtk_radial_File);
+    DUMP_TURB_PRECIP_3D(dump_radial, i_radial, Uranus_vtk_radial_File);
 
     Uranus_vtk_radial_File <<  "VECTORS v-w-Cell float " << endl;
     for(int j = 0; j < jm; j++){
@@ -244,6 +309,8 @@ void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
     // both identically zero unless ATURAN_RADIATION is set.
     dump_zonal("Q_rad_mW_m3", Q_rad, 1.0e3, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("Radiation", radiation, 1.0, k_zonal, Uranus_vtk_zonal_File);
+    dump_zonal("Emissivity", epsilon, 1.0, k_zonal, Uranus_vtk_zonal_File);
+    DUMP_TURB_PRECIP_3D(dump_zonal, k_zonal, Uranus_vtk_zonal_File);
 
     Uranus_vtk_zonal_File <<  "VECTORS u-v-Cell float" << endl;
     for(int i = 0; i < im; i++){
@@ -334,6 +401,8 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
     // both identically zero unless ATURAN_RADIATION is set.
     dump_longal("Q_rad_mW_m3", Q_rad, 1.0e3, j_longal, Uranus_vtk_longal_File);
     dump_longal("Radiation", radiation, 1.0, j_longal, Uranus_vtk_longal_File);
+    dump_longal("Emissivity", epsilon, 1.0, j_longal, Uranus_vtk_longal_File);
+    DUMP_TURB_PRECIP_3D(dump_longal, j_longal, Uranus_vtk_longal_File);
 
     Uranus_vtk_longal_File <<  "VECTORS u-w-Cell float" << endl;
     for(int i = 0; i < im; i++){
