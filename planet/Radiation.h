@@ -36,27 +36,44 @@
  *      ATJUP     0.3263 bar  119.30 K   124.66 K   12.181   13.695    1.060    0.889
  *      ATSAT     0.0660      63.13       94.12      1.306    4.450    1.450    0.294
  *      ATURAN    0.1699      70.93       59.04      1.728    0.689    1.204    2.508
- *      ATNEPT   17.2287     116.10       59.28     10.256    0.700    0.996   14.651
+ *      ATNEPT    0.0603      81.37       59.28      2.340    0.700    0.942    3.343
+ *
+ * ATNEPT'S ROW IS POST-FIX and the previous one is worth keeping in view, because it is the clearest
+ * demonstration on this table of what the photosphere diagnostic is for. It read 17.2287 bar /
+ * 116.10 K / 14.651, and none of that was opacity: init_PressureStatic anchored a p_bottom taken at
+ * T_bottom to a base of (T/t_ref) rather than (T/T_bottom), inflating Neptune's whole pressure field
+ * by (T_bottom/t_ref)^n = 607x and putting the TOP of the domain at 15 bar. tau = 1 was being
+ * reached in the first layer or two below the ceiling, so the scheme was reporting the top of the
+ * grid and faithfully radiating the 116 K it found there. A calibration read of that row would have
+ * been a search for an opacity error that did not exist.
  *
  * READ THE LAST TWO COLUMNS AGAINST EACH OTHER, because that is what the photosphere temperature
  * was added to make possible. OLR/B is the SCHEME's excess over a blackbody at the level it calls
- * the photosphere; OLR/in is the whole error. The scheme term stays between 0.996 and 1.450 across
- * four planets whose total error spans a factor of FIFTY. The two-stream sum is not the variable —
- * the temperature of the column it is handed is. On Neptune the scheme term is 0.996: the emission
- * is a blackbody at 116.10 K to within 0.13 K, and every bit of the 14.65x is that 116.10 K.
+ * the photosphere; OLR/in is the whole error. The scheme term stays between 0.94 and 1.45 across
+ * four planets whose total error still spans a factor of eleven. The two-stream sum is not the
+ * variable — the temperature of the column it is handed is, and on Neptune it was not even the
+ * temperature so much as WHICH LEVEL the column placed at that pressure.
  *
  * THE SIGN IS NOT COMMON EITHER, so "the grey scheme over-emits" was never true as a general
  * statement. Jupiter and Saturn UNDER-emit, with photospheres 5.4 K and 31.0 K too COLD; Uranus and
- * Neptune OVER-emit, 11.9 K and 56.8 K too WARM. The discriminator is where tau reaches 1: too
+ * Neptune OVER-emit, 11.9 K and 22.1 K too WARM. The discriminator is where tau reaches 1: too
  * opaque puts the photosphere high and cold (Saturn, 0.066 bar), too transparent puts it deep and
- * hot (Neptune, 17.2 bar — fifty times deeper than any other planet here, and the single number on
- * this table most obviously wrong). Jupiter, the planet it was tuned on, lands in its own target
- * band and is the only one whose photosphere temperature is close to right.
+ * hot. All four now sit between 0.060 and 0.33 bar, which is the first time the four have been
+ * comparable at all. Jupiter, the planet it was tuned on, lands in its own target band and is the
+ * only one whose photosphere temperature is close to right.
  *
  * ONE MORE SPLIT WORTH NOTING: the two gas giants are STATIONARY between radiation calls (ATJUP
- * 119.30 -> 119.29 K, ATSAT 63.13 -> 63.14 K) while both ice giants climb every call (ATURAN +2.1
- * K, ATNEPT +8.4 K). A calibration question and a drifting-profile question are being asked at the
+ * 119.30 -> 119.29 K, ATSAT 63.13 -> 63.14 K) while both ice giants still move (ATURAN +2.1 K,
+ * ATNEPT +2.7 K). A calibration question and a drifting-profile question are being asked at the
  * same time on ATURAN and ATNEPT, and only the first of them is about this file.
+ *
+ * AND ONE OPEN ODDITY, recorded rather than explained: post-fix ATNEPT's OLR FALLS between the two
+ * calls (2.625 -> 2.340) while its photosphere temperature RISES (78.67 -> 81.37 K), which those
+ * two numbers alone cannot both do under sigma*T^4. Its scheme term moves 1.209 -> 0.942 across the
+ * pair, where every other planet's is stable to a few parts in a thousand. Two iterations from a
+ * cold start is not a steady state and the pressure field underneath has just changed by 607x, so
+ * this may simply be a column still settling — but it is the one number on this table that is not
+ * yet understood, and it should not be quoted as a converged result.
  *
  * They stay here, as one shared calibration, precisely so that stays ONE question rather than four
  * independently drifting answers. The per-planet lever is the runtime knob
