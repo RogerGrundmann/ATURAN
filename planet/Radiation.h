@@ -212,11 +212,15 @@ void Radiation<Planet>::run(){
     // Column diagnostics: the mean outgoing longwave, and where tau = 1 measured down from the
     // top falls. That second number is the photosphere, and it is the calibration question this
     // scaffold exists to ask — see the banner.
-    double olr_sum = 0.0, wsum = 0.0, tau1_p_sum = 0.0;
+    // tau1_t_sum carries the TEMPERATURE at that same level. OLR is sigma*T^4 evaluated where the
+    // column becomes opaque, so the photosphere temperature is the one number that says whether an
+    // over-emitting scheme is emitting wrongly or emitting a column that is too warm — and until
+    // this was added, only the column MAXIMUM had ever been looked at, which answers neither.
+    double olr_sum = 0.0, wsum = 0.0, tau1_p_sum = 0.0, tau1_t_sum = 0.0;
     long long n_tau1 = 0;
 
     #pragma omp parallel for collapse(2) schedule(static) \
-        reduction(+:olr_sum, wsum, tau1_p_sum, n_tau1)
+        reduction(+:olr_sum, wsum, tau1_p_sum, tau1_t_sum, n_tau1)
     for(int j = 0; j < jm; j++){
         for(int k = 0; k < km; k++){
 
@@ -280,6 +284,7 @@ void Radiation<Planet>::run(){
                     cum += tau_l[i];
                     if(cum >= 1.0){
                         tau1_p_sum += m.p_stat.x[i][j][k];
+                        tau1_t_sum += m.t.x[i][j][k] * t_ref;
                         n_tau1++;
                         break;
                     }
@@ -373,6 +378,22 @@ void Radiation<Planet>::run(){
     printf("      %s: radiation — mean OLR %.3f W/m2 against %.3f in (F_int %.2f + solar %.2f);"
            " thermal photosphere (tau=1) at %.4f bar in %lld of %d columns\n",
            TAG, olr, in_, F_int, sw_, tau1, n_tau1, jm * km);
+
+    // The photosphere temperature, and the two things it is worth comparing against. B_tau1 is what
+    // a blackbody AT that temperature emits: if it tracks the OLR, the scheme is faithfully
+    // radiating the column it was handed and any excess is in the TEMPERATURE PROFILE, not here. If
+    // it does not, the fault is in the two-stream sum. The two temperature gaps are DIFFERENT
+    // questions and are easy to confuse: T_tau1 - T_eff(OLR) is the scheme's own excess in kelvin,
+    // while T_tau1 - T_eff(in) is how far the COLUMN sits from the temperature the planet's energy
+    // budget calls for. The second is only a defect on a planet actually near radiative
+    // equilibrium; on one with a large internal flux the photosphere belongs above T_eff(in).
+    const double tau1_T   = (n_tau1 > 0) ? tau1_t_sum / double(n_tau1) : 0.0;
+    const double B_tau1   = sigma * tau1_T * tau1_T * tau1_T * tau1_T;
+    const double T_eff_in = std::pow(in_ / sigma, 0.25);
+    const double T_eff_ol = (olr > 0.0) ? std::pow(olr / sigma, 0.25) : 0.0;
+    printf("      %s: radiation — photosphere T %.2f K emits %.3f W/m2 as a blackbody;"
+           " T_eff(OLR) %.2f K vs T_eff(in) %.2f K\n",
+           TAG, tau1_T, B_tau1, T_eff_ol, T_eff_in);
 
     auto end     = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
