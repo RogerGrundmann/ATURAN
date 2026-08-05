@@ -660,8 +660,21 @@ private:
     double mue_nh3 = 0.92e-5; // dynamic viscosity of ammonia in Ns/m²
     double mue_nh4sh = 0.99e-5; // dynamic viscosity of ammonium sulfide in Ns/m²
     double mue_h2s = 1.3e-5; // dynamic viscosity of hydrogen sulfid in Ns/m²
-    double mue_h2o = 1.308e-3; // dynamic viscosity of water in Ns/m²
-    double mue_ch4 = 1.107e-2; // dynamic viscosity of methane in Ns/m²
+    double mue_h2o = 0.9e-5;   // dynamic viscosity of water VAPOUR in Ns/m² (was 1.308e-3, the liquid)
+    // ATJUP's f71ef91 applied here. Methane's gas viscosity is 1.107e-2 CENTIPOISE, and the
+    // centipoise figure was entered as if it were Pa*s — a factor 1000. Water's 1.308e-3 is the
+    // LIQUID value; the vapour is of order 1e-5 like every other component here.
+    //
+    // It matters because ThermalProperties forms mue_mix as a MASS-WEIGHTED mean, so a component
+    // that is 1000x too large dominates the sum outright: mue_mix came out 1.3254e-3 Ns/m2 where
+    // every honest component is of order 1e-5 — liquid-water viscosity in a hydrogen atmosphere.
+    //
+    // ATJUP'S COMMIT SAYS "the only consumer is the NH4SH Stokes settling velocity". That is true
+    // OF ATJUP, whose rhs_t carries no thermalmassflux term. It is NOT true here: mue_mix also
+    // sets nu_mix, hence D_nh3 and D_h2s, hence the diffusive fluxes j_*, hence thermalmassflux —
+    // which on the ice giants dominates rhs_t by four to six orders of magnitude. The scope note
+    // was right where it was written and wrong for the models it was never propagated to.
+    double mue_ch4 = 1.107e-5; // dynamic viscosity of methane in Ns/m²
 
 // thermal conductivities
     double k_h2 = 0.1317; // thermal conductivity of hydrogen in W/(m*K)
