@@ -58,7 +58,7 @@ void cUranusModel::Latent_Heat(){
 
         for(int k = 1; k < km-1; k++){
             for(int i = im-2; i >= 1; i--){
-                const double rm       = rad.z[i];
+                const double rm       = metricRadius(rad.z[i]);
                 const double rmsinthe = rm * sinthe;
                 const double inv_2rm_dthe      = 1.0 / (2.0 * rm * dthe);
                 const double inv_2rmsinthe_dphi = 1.0 / (2.0 * rmsinthe * dphi);

@@ -126,7 +126,8 @@ void cUranusModel::computePressure(){
     double daux_wdphi = 0.0;
 
     for(int i = 1; i < im-1; i++){
-        rm = rad.z[i];
+        rm = metricRadius(rad.z[i]);   // must match the integrator's metric, or the projection
+                                       // solves a different geometry than the momentum equation
 
         for(int j = 1; j < jm-1; j++){
             sinthe = sin(the.z[j]);

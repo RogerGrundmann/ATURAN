@@ -230,7 +230,7 @@ void cUranusModel::Forces(){
     #pragma omp parallel for schedule(static) collapse(2)
     for(int i = 1; i < im-1; i++){
         for(int j = 1; j < jm-1; j++){
-            const double rm       = rad.z[i];
+            const double rm       = metricRadius(rad.z[i]);
             const double sinthe   = sin(the.z[j]);
             const double costhe   = cos(the.z[j]);
             const double rmsinthe = rm * sinthe;
