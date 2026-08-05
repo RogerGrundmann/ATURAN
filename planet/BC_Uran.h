@@ -7,7 +7,11 @@
  * This is a header-only file: it contains the BC_Uran class, all inline method
  * bodies, and the inline cUranusModel delegation wrappers that forward each
  * cUranusModel::BC_xxx() call to the corresponding BC_Uran method.
- * BC_Uran.cpp is a minimal stub that provides a translation unit.
+ * BC_Uran.cpp is NOT a stub, whatever this comment used to claim: it defines the four
+ * bc_fields_* lists — radius, phi, theta_extrap and theta_zero — naming the ~25 arrays each
+ * boundary pass applies to. That list is Uranus's own chemistry, and it is precisely the part
+ * BoundaryConditions<Planet> cannot carry if it is to stay byte-identical across four planets
+ * with different species. A file called a stub is a file someone eventually deletes.
 */
 
 #pragma once
