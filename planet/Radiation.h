@@ -33,26 +33,36 @@
  * are the LAST sample; dT/diter is the drift of the photosphere temperature per ITERATION over the
  * final 32, which is the column that says how much the rest of the row can be trusted:
  *
- *      planet      tau=1  T(tau=1)  T_eff(in)      OLR   OLR/B  OLR/in   dT/diter
- *      ATJUP      0.3214    117.29     124.66   11.463   1.068   0.837    -0.0084
- *      ATSAT      0.0670     63.38      94.12    1.234   1.349   0.277    +0.0012
- *      ATURAN     0.1658     99.90      59.04    5.230   0.926   7.591    -0.0088
- *      ATNEPT     0.0380     78.65      59.28    2.002   0.923   2.860    +0.0784
+ *      planet      tau=1  T(tau=1)  T_eff(in)      OLR   OLR/B    OLR/in   dT/diter
+ *      ATJUP      0.3214    117.29     124.66   11.463   1.068     0.837    -0.0084
+ *      ATSAT      0.0670     63.38      94.12    1.234   1.349     0.277    +0.0012
+ *      ATURAN     0.1713    136.45      59.04   20.734   1.055    30.093    +0.1603
+ *      ATNEPT     0.0576    205.74      59.28  100.385   0.988   143.407    +0.3359
+ *
+ * THREE OF THESE ROWS MOVED WHEN A CONSTANT WAS CORRECTED, AND THE PREVIOUS ONES WERE BETTER-LOOKING
+ * AND LESS TRUE. ATURAN read 7.591 here and ATNEPT 2.860. Both were produced by TWO ERRORS PARTLY
+ * CANCELLING. mue_ch4 carried methane's viscosity in CENTIPOISE as if it were Pa*s and mue_h2o
+ * carried liquid water's, so the mass-weighted mue_mix came out ~150x too large — liquid-water
+ * viscosity in a hydrogen atmosphere. On the ice giants mue_mix sets the species diffusivities and
+ * hence the diffusive-enthalpy sink in rhs_t, so that sink was ~150x overweighted, cold enough to
+ * drive a front into the t_min floor and, in the mean, to hold the column DOWN against a heating
+ * excess nothing else was opposing. Correcting the constant removes the overweight and unmasks the
+ * excess: it did not create it. A number that looks better because two mistakes disagree is the
+ * failure mode this table exists to expose, and it caught it here on its own rows.
  *
  * THE SLOPE COLUMN EXISTS BECAUSE THE FIRST VERSION OF THIS TABLE WAS MEASURED AT TWO ITERATIONS
- * AND WAS WRONG. Not wrong about what it measured — wrong to be read as a steady state. ATURAN read
- * 2.508 there and runs to 7.591, a factor of three; ATNEPT read 3.343 and runs to 2.860 by way of a
- * peak at 85.35 K and a minimum of 69.03 K at iteration 85. The two gas giants barely moved
- * (0.889 -> 0.837, 0.294 -> 0.277), which is exactly why the short run looked trustworthy. A row
- * without a slope beside it cannot tell those two cases apart.
+ * AND WAS WRONG. Not wrong about what it measured — wrong to be read as a steady state. A row
+ * without a slope beside it cannot tell a converged planet from one mid-excursion, and the two gas
+ * giants barely moving is exactly why the short run looked trustworthy at the time.
  *
- * AND THE SPLIT IS NOT GAS GIANT AGAINST ICE GIANT, which is the reading the two-iteration table
- * invited and this one refutes. ATJUP drifts -0.0084 K/iter and ATURAN -0.0088: the same, to within
- * the last digit. ATSAT is the quiet one (+0.0012, last-10 spread 0.02 K). ATNEPT alone is an order
- * of magnitude off any of them at +0.0784 with a spread of 0.72 K, and it is RISING again after
- * turning at iteration 85 — it passed close to balance on the way through (OLR/in 1.663 near
- * iteration 97) and left again. Three of four are quiescent; one is not; the family line is not
- * where it looked.
+ * THE SPLIT IS NOW GAS GIANT AGAINST ICE GIANT, AND THE PREVIOUS VERSION OF THIS PARAGRAPH SAID IT
+ * WAS NOT. That statement was correct about the numbers in front of it — with the bad viscosity
+ * ATJUP drifted -0.0084 K/iter and ATURAN -0.0088, indistinguishable — and it is wrong now. With the
+ * constants right the gas giants are quiescent (-0.0084, +0.0012) and BOTH ice giants diverge
+ * (+0.1603, +0.3359), an order of magnitude clear of either. The line is where it first looked, but
+ * it was not visible while an overweighted sink was pinning Uranus flat. Two readings of the same
+ * split, both honest on their own evidence; this one rests on constants that are not known to be
+ * wrong.
  *
  * ATNEPT'S EARLIER ROW IS WORTH KEEPING IN VIEW, as the clearest demonstration on this table of what
  * the photosphere diagnostic is for. It read 17.2287 bar / 116.10 K / 14.651, and none of that was
@@ -66,23 +76,32 @@
  * READ THE LAST THREE COLUMNS AGAINST EACH OTHER, because that is what the photosphere temperature
  * was added to make possible. OLR/B is the SCHEME's excess over a blackbody at the level it calls
  * the photosphere; OLR/in is the whole error. Over 224 iterations and four planets the scheme term
- * stays between 0.92 and 1.35 while the total error spans a factor of TWENTY-SEVEN, 0.277 to 7.591.
- * The two ice giants land at 0.926 and 0.923 — the same to three digits — while differing by 2.7x in
- * total error. The two-stream sum is not the variable. The temperature of the column it is handed
- * is, and on Neptune it was not even the temperature so much as WHICH LEVEL sat at that pressure.
+ * stays between 0.99 and 1.35 while the total error now spans a factor of FIVE HUNDRED, 0.277 to
+ * 143.407. That is the strongest form this argument has taken: the error moved by more than two
+ * orders of magnitude on ATNEPT alone when a viscosity was corrected, and the scheme term moved from
+ * 0.923 to 0.988. The two-stream sum is not the variable and never has been. The temperature of the
+ * column it is handed is — and on Neptune it was once not even the temperature so much as WHICH
+ * LEVEL sat at that pressure.
  *
- * THE SIGN IS NOT COMMON EITHER, so "the grey scheme over-emits" was never true as a general
- * statement. Jupiter and Saturn UNDER-emit, with photospheres 7.4 K and 30.7 K too COLD; Uranus and
- * Neptune OVER-emit, 40.9 K and 19.4 K too WARM. The discriminator is where tau reaches 1: too
- * opaque puts the photosphere high and cold (Saturn, 0.067 bar), too transparent puts it deep and
- * hot. All four now sit between 0.038 and 0.32 bar. Jupiter, the planet it was tuned on, lands in
- * its own target band and is the only one whose photosphere temperature is close to right.
+ * THE SIGN IS STILL NOT COMMON, so "the grey scheme over-emits" remains false as a general statement,
+ * but the margins are no longer comparable. Jupiter and Saturn UNDER-emit, photospheres 7.4 K and
+ * 30.7 K too COLD, both quiescent. Uranus and Neptune OVER-emit by 77.4 K and 146.5 K and are
+ * climbing. The discriminator is still where tau reaches 1: too opaque puts the photosphere high and
+ * cold (Saturn, 0.067 bar), too transparent puts it deep and hot. All four sit between 0.058 and
+ * 0.32 bar. Jupiter, the planet the opacity was tuned on, is the only one whose photosphere
+ * temperature is close to right, and it is the only one that has never needed a constant corrected.
  *
- * NOTE WHICH ICE GIANT IS NOW THE WORSE, because it reversed. At two iterations Neptune looked
- * catastrophic (14.651) and Uranus mild (2.508). Run out, Uranus is the worst row on the table at
- * 7.591 and has been quiescent since iteration 62, while Neptune sits at 2.860 and is still moving.
- * A settled wrong answer and an unsettled one are different problems, and only the slope column
- * distinguishes them.
+ * WHICH ICE GIANT IS WORSE HAS NOW REVERSED TWICE, which is a reason to distrust any single reading
+ * of this table. At two iterations Neptune looked catastrophic (14.651) and Uranus mild (2.508). Run
+ * to 224 with the bad viscosity, Uranus was the worse (7.591, quiescent) and Neptune the better
+ * (2.860, moving). With the viscosity corrected, Neptune is far the worse again at 143.407 against
+ * Uranus's 30.093, and both diverge. Nothing about the radiation scheme changed across any of those
+ * three readings.
+ *
+ * WHAT IS LEFT, stated so the next reader does not mistake the current rows for a calibration
+ * result: an unopposed HEATING excess on both ice giants, previously masked by a sink that was
+ * ~150x too strong. Until that is found, the opacity constants below cannot be judged against these
+ * two rows at all — a photosphere 77 K and 146 K too warm says nothing about kappa.
  *
  * They stay here, as one shared calibration, precisely so that stays ONE question rather than four
  * independently drifting answers. The per-planet lever is the runtime knob
