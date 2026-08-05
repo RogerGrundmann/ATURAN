@@ -85,9 +85,17 @@ void cUranusModel::printMinMax(){
 
     cout << endl;
 
-    cout << endl;
-
-    cout << endl;
+    // The radiation scheme's own fields, on exactly the argument the precipitation block above
+    // makes: zero unless ATURAN_RADIATION is set, printed regardless, so that switching the knob
+    // on produces something visible. Radiation.h has been filling these three arrays on this model
+    // since the port and NOTHING read them — not this file, not ParaView — which is why every
+    // number known about ATURAN's radiation so far came from the one stdout line in the shared
+    // header. net radiation is the interface flux the scheme balances; emissivity is the only
+    // direct view of the OPACITY, and so the first place a mis-tuned kappa would show.
+    cout << endl << " Radiation " << endl;
+    searchMinMax_3D(" max 3D net radiation ", " min 3D net radiation ", " W/m2", radiation, 1.0);
+    searchMinMax_3D(" max 3D Q_rad ", " min 3D Q_rad ", " W/m3", Q_rad, 1.0);
+    searchMinMax_3D(" max 3D emissivity ", " min 3D emissivity ", " /", epsilon, 1.0);
 
     // Equatorial column profile (j=jm/2, k=km/2), top -> bottom, for a direct check of the
     // radiation / Q_rad fields against the actual T(p). Ported from ATJUP, which was the only
