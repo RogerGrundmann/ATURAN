@@ -68,7 +68,7 @@ void cUranusModel::init_temperature(){
 *
 */
 void cUranusModel::init_PressureDynamic(){
-    cout << endl << "      ATNEPT: init_PressureStatic" << endl;
+    cout << endl << "      ATURAN: init_PressureDynamic" << endl;
 
     auto begin = std::chrono::high_resolution_clock::now();
 
@@ -88,9 +88,9 @@ void cUranusModel::init_PressureDynamic(){
 
     auto end = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
-    printf(" time measured: %.3f seconds for init_PressureStatic\n", elapsed.count() * 1e-9);
+    printf(" time measured: %.3f seconds for init_PressureDynamic\n", elapsed.count() * 1e-9);
 
-    cout << "      ATNEPT: init_PressureStatic ended" << endl;
+    cout << "      ATURAN: init_PressureDynamic ended" << endl;
 }
 /*
 *

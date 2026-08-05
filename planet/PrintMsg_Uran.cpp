@@ -160,8 +160,8 @@ double cUranusModel::out_minValue() const{
 void cUranusModel::print_welcome_msg(){
     if(verbose){
         cout << endl << endl << endl;
-        cout << "***** Atmosphere Jupiter General Circulation Model(ATUran) applied to laminar flow" << endl;
-        cout << "***** program for the computation of Jupiter-atmospherical circulating flows in a spherical shell" << endl;
+        cout << "***** Atmosphere Uranus General Circulation Model(ATURAN) applied to laminar flow" << endl;
+        cout << "***** program for the computation of Uranus-atmospherical circulating flows in a spherical shell" << endl;
         cout << "***** finite difference scheme for the solution of the 3D Navier-Stokes equations" << endl;
         cout << "***** with 6 additional transport equations to describe the water vapour, cloud water, cloud ice and nh3 vapour, nh3 cloud and nh3 ice" << endl;
         cout << "***** 4th order Runge-Kutta scheme to solve 2nd order differential equations inside an inner iterational loop" << endl;
@@ -189,7 +189,7 @@ void cUranusModel::initMsg(){
 *
 */
 void cUranusModel::print_final_msg(){
-    cout << endl << "***** end of the JupiterAtmosphere General Circulation Modell(ATURAN) *****" << endl << endl;
+    cout << endl << "***** end of the UranusAtmosphere General Circulation Modell(ATURAN) *****" << endl << endl;
     if(n == nm)   cout <<  "***** number of artificial time steps      n = " << iter_n << ", end of program reached because of limit of maximum artificial time steps ***** \n\n" << endl;
 }
 /*

@@ -499,7 +499,7 @@ void cUranusModel::Run(){
 
     }  // end for iter_n
 
-    cout << endl << "      Jupiter: run_3D_loop atm ended ..........................." << endl;
+    cout << endl << "      Uranus: run_3D_loop atm ended ..........................." << endl;
 
 
 /*
