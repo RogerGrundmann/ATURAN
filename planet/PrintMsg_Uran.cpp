@@ -89,6 +89,29 @@ void cUranusModel::printMinMax(){
 
     cout << endl;
 
+    // Equatorial column profile (j=jm/2, k=km/2), top -> bottom, for a direct check of the
+    // radiation / Q_rad fields against the actual T(p). Ported from ATJUP, which was the only
+    // model that had it.
+    //
+    // IT IS THE TABLE THAT WOULD HAVE CAUGHT ATNEPT'S 607x PRESSURE DEFECT ON THE FIRST RUN.
+    // Neptune's photosphere was reported at 17.2287 bar and read as an opacity failure for two
+    // commits; what was actually wrong was that init_PressureStatic put the TOP of the domain at
+    // 15 bar, so tau = 1 was reached in the first layer below the ceiling. A single column of
+    // p[bar] from top to bottom shows that immediately, and no amount of column-MEAN diagnostics
+    // does. The p[bar] column earns its place here even with the radiation knob off.
+    {
+        const int j0 = jm / 2, k0 = km / 2;
+        cout << endl << " Equatorial column  (j=" << j0 << ", k=" << k0
+             << ")   top -> bottom" << endl;
+        printf("   %3s  %10s  %8s  %8s  %12s  %14s\n",
+               "i", "p[bar]", "T[K]", "eps", "netRad[W/m2]", "Q_rad[W/m3]");
+        for(int i = im - 1; i >= 0; i--){
+            printf("   %3d  %10.4f  %8.2f  %8.4f  %12.4f  %14.4e\n",
+                   i, p_stat.x[i][j0][k0], t.x[i][j0][k0] * t_ref,
+                   epsilon.x[i][j0][k0], radiation.x[i][j0][k0], Q_rad.x[i][j0][k0]);
+        }
+    }
+
     cout << endl << endl;
 }
 /*
