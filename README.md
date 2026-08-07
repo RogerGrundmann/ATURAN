@@ -130,14 +130,16 @@ diff ../ATJUP/planet/SHARED.md5 planet/SHARED.md5
 ## Optional modules
 
 Every module is **off by default** and a stock run is unaffected by its presence. Set the
-environment variable to enable. All of them fill diagnostic arrays; none feeds back into the
-temperature equation on this model — there is no `ATURAN_RAD_COUPLING`, unlike ATJUP.
+environment variable to enable. All of them fill diagnostic arrays. Only one of them can feed back
+into the temperature equation — `ATURAN_RAD_COUPLING`, added after ATJUP's and ATSAT's; precipitation
+and turbulence remain diagnostic-only here.
 
 **Radiation** — grey two-stream, shared `Radiation.h`
 
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `ATURAN_RADIATION` | 0 | run the solve; fills `Q_rad`, `radiation`, `epsilon` |
+| `ATURAN_RAD_COUPLING` | 0.0 | add `Q_rad` to `rhs_t` as `Q_rad·L_rad/(ρ·cp·u_0·t_ref)`. **1.0 is the physically correct value, not a starting point** — see *Known limitations* for why it is invisible at that setting and what the sweep measured |
 | `ATURAN_SOLAR` | 1 | absorbed shortwave channel (only acts with `ATURAN_RADIATION`) |
 | `ATURAN_SOLAR_STRENGTH` | 1.0 | scale the absorbed insolation |
 | `ATURAN_SW_TAU_PER_BAR` | 1.0 | move the shortwave absorption level |
@@ -161,9 +163,19 @@ temperature equation on this model — there is no `ATURAN_RAD_COUPLING`, unlike
 |----------|---------|--------|
 | `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
 | `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
-| `ATURAN_PRESS_SOLVER` | *see code* | pressure-solver selection |
+| `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own serial Gauss-Seidel `computePressure()`; 1 = the shared red-black `PressureSolver<Planet>` |
 | `ATURAN_STEADY` | 1 | steady-state query in the report |
 | `ATURAN_LOCAL_RHO`, `ATURAN_METRIC_RADIUS`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
+
+**Buoyancy and the hydrostatic split** — all default off; the model is bit-identical with them unset.
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ATURAN_BUOY_SCALE` | 1.0 | multiplier on the buoyancy in `rhs_u` |
+| `ATURAN_BUOY_REF` | 0 | ATSAT's device: subtract the area-weighted horizontal mean in place |
+| `ATURAN_HYDRO_SPLIT` | 0 | ATJUP's: carry the buoyancy in `p_hydro`, drop the radial term from `rhs_u`, let the horizontal gradient enter `rhs_v`/`rhs_w` |
+| `ATURAN_HYDRO_REF` | 0 | integrate downward from the top instead of up from the deep boundary. Not the intended setting |
+| `ATURAN_HYDRO_ND_KM` | 0 | restore the dropped km→m factor in `p_hydro`'s nondimensionalisation, i.e. the pre-`9da831a` behaviour, for attribution only |
 
 ---
 
@@ -207,6 +219,27 @@ OMP_NUM_THREADS=12 ./cli/uran . config_aturan.xml > run.log 2>&1
 Runs in this repository's measurements are single-threaded (`OMP_NUM_THREADS=1`) so that results
 are bit-reproducible and byte-comparisons between builds mean something.
 
+**That convention is load-bearing, not tidiness: THIS MODEL IS NOT REPRODUCIBLE ABOVE ONE THREAD.**
+Two runs of the same binary, same config, both at `OMP_NUM_THREADS=16`, differ — 8 of 13 output
+files identical. Same-config run-to-run divergence at a fixed thread count is a race, not rounding.
+Measured further:
+
+- 1 thread vs 16 threads: 0 of 13 files match; after 4 iterations 28 of 64 field arrays in the
+  zonal slice differ, starting from `u`, `v`, `w`, `t` at **iteration 2** — iteration 1 is clean.
+- With every `#pragma omp` disabled: 13 of 13 identical run-to-run **and** identical to the
+  1-thread reference. So the cause is OpenMP, not uninitialised memory.
+- The site is NOT identified. Serialising files one group at a time makes every subset
+  reproducible — the integrator alone, the physics group, the init routines, `BoundaryConditions.h`
+  alone — while the full build still diverges. A subset test reduces the parallel work and so can
+  hide a race by changing timing; those passes are weak evidence and should not be read as
+  clearing those files. **`-fsanitize=thread` is the tool for this, and has not been run yet.**
+- `RungeKutta_Uran_Turb.cpp` states its acceptance test as "reproducibility at any thread count".
+  The RK stages pass it in isolation; the program does not.
+
+Threading is also a poor trade here. Per time step, 1/2/4/8/16 threads give 8.562/5.876/4.467/
+4.320/4.220 s — saturating at **2×**, implying ~46 % of a step is serial. Running N jobs
+concurrently at one thread each beats running them sequentially at 16 threads for any N ≥ 3.
+
 ### Python
 
 ```python
@@ -228,35 +261,92 @@ radial, zonal, and longitudinal cross-sections).
 
 None of these stops a run; all of them affect what a result means.
 
-1. **There is an unopposed heating excess, and it is the highest-value open item.** Run to 224
-   iterations with the radiation diagnostic on, the τ=1 photosphere settles at **136.45 K against a
-   T_eff(in) of 59.04 K** — 77 K too warm — emitting **30× the planet's energy budget** and still
-   climbing at +0.16 K/iteration. Until this is found, **the opacity constants cannot be judged
-   against this model at all**: a photosphere 77 K too warm says nothing about kappa.
+1. **The photosphere is 77 K too warm, and it is NOT a heating excess — it is unopposed vertical
+   redistribution.** Run to 224 iterations with the radiation diagnostic on, the τ=1 photosphere
+   settles at **136.45 K against a T_eff(in) of 59.04 K**, emitting **30× the planet's energy
+   budget** and still climbing at +0.15 K/iteration. But the column does not gain heat:
+
+   | checkpoint | T(i=0) deep | T(i=20) mid | T(i=40) top | column mean |
+   |---|---|---|---|---|
+   | 1 | 405.11 | 253.58 | 77.15 | 245.99 |
+   | 28 | 346.63 | 246.31 | 139.07 | 243.87 |
+
+   The deep loses 58.5 K, the top gains 61.9 K, and the **mean moves −0.9 %**. Thermal diffusion
+   flattens the initial adiabat and nothing anchors the top of the column to the planet's energy
+   budget, so the photosphere drifts to roughly the column mean. Until this is fixed, **the opacity
+   constants cannot be judged against this model at all**: a photosphere 77 K too warm says nothing
+   about kappa. This remains the highest-value open item.
+
+   What has been ruled out by measurement, so it is not re-derived:
+   - **Latent heat is not the source.** `Q_Latent`/`Q_Sensible` reach no RHS, and the path that does
+     reach `t` — the saturation adjustment — runs as a *sink* here, with ice sublimating throughout
+     (ch4_ice 111 → 87, h2o_ice 59 → 53), consistent with the −0.9 % drift.
+   - **The buoyancy anomaly and the hydrostatic split do not fix it.** With the km→m factor restored
+     *and* the metric radius wired — the configuration both were built to reach — `ATURAN_HYDRO_SPLIT`
+     moves OLR/in by 0.34 % alone and 0.007 % on top of the metric. A term that redistributes
+     buoyancy *horizontally* is the wrong instrument for a fault that is vertical.
+   - **Radiative coupling works, and is far too slow.** See item 3.
 
 2. **That number got worse when a real bug was fixed, and the previous one was not better.** Before
    the methane-viscosity correction this model read 7.591× — an artefact of two errors partly
    cancelling. `mue_ch4` held methane's viscosity in *centipoise* as if it were Pa·s, so the
    mass-weighted `mue_mix` came out ~150× too large, and on this model `mue_mix` sets the species
    diffusivities and hence the diffusive-enthalpy sink in `rhs_t`. That sink, ~150× overweighted, was
-   holding the column down against the heating excess above. Correcting it unmasked the excess
-   rather than causing it.
+   resisting the flattening in item 1. Correcting it unmasked the drift rather than causing it.
 
-3. **`ATURAN_THERMAL_MASSFLUX` is a measurement instrument, not a fix.** Setting it to 0 removes the
-   sink entirely and the model runs away harder (34× at 224 iterations), so the term is load-bearing
+3. **`ATURAN_RAD_COUPLING` moves the photosphere the right way and cannot move it far enough.** The
+   term is the anchor item 1 is missing, and the sub-cap sweep at nm=224 is monotonic:
+
+   | coupling | T(τ=1) | OLR/in | T(i=40) top |
+   |---|---|---|---|
+   | 0 (off) | 136.45 | 30.093 | 139.07 |
+   | 1.0 | 136.45 | 30.093 | 139.07 |
+   | 1e3 | 136.41 | 30.064 | 139.04 |
+   | 1e4 | 136.06 | 29.806 | 138.77 |
+   | 3e4 | 135.69 | 29.536 | 138.47 |
+   | 1e5 | 136.33 | 30.177 | 139.24 |
+
+   **At 1.0 — the physically correct value — the term is live but invisible**: it changes all 92
+   output files, and the largest temperature change anywhere is 1.0e-4 K, the output format's own
+   resolution. That was predicted before the run from `Q_rad ~ 1e-4 W/m³` and matches, which is what
+   certifies the scaling; a *visible* result at 1.0 would have meant a units error. ATSAT's note puts
+   the same point at ~1e9 iterations to equilibrate.
+
+   **The 1e5 row is the limiter, not the term.** Its raw tendency is ~1.1 against ATJUP's
+   `rad_t_max = 0.5`, so it redistributes by where the cap bites — which is why it breaks the trend
+   and warms the top instead of cooling it. Read the sub-cap rows only. Extrapolating those, closing
+   the 80 K gap needs a coupling of order 1e6, which is deep in the capped regime: **the term is
+   directionally right and cannot reach the answer within the cap at this run length.**
+
+4. **`ATURAN_THERMAL_MASSFLUX` is a measurement instrument, not a fix.** Setting it to 0 removes the
+   sink entirely and the model drifts harder (34× at 224 iterations), so the term is load-bearing
    even though its form is questionable: it is a flux times a temperature *gradient magnitude*, with
-   an absolute value on one component only, so it cannot change sign to oppose a runaway.
+   an absolute value on one component only, so it cannot change sign to oppose the flattening.
 
-4. **The integrator's temperature floor has been reached in real runs.** `t_min_K()` = 7.5 K was
+5. **The integrator's temperature floor has been reached in real runs.** `t_min_K()` = 7.5 K was
    once recorded as never engaging, on the evidence of a 2-iteration run; over 224 iterations with
    the pre-fix viscosity it engaged in 20 of 28 checkpoints. It is a guard against a NaN, not a
    dormant one, and a run that touches it is reporting a collapse, not a temperature.
 
-5. **The radiation, precipitation and turbulence modules are diagnostic-only here.** They fill their
-   arrays and nothing reads them back: there is no `ATURAN_RAD_COUPLING`, `S_precip_*` reaches no
-   RHS, and `ATURAN_TURB_COUPLING` defaults to 0. Switching a module on changes plots, not physics.
+6. **The precipitation and turbulence modules are diagnostic-only here.** They fill their arrays and
+   nothing reads them back: `S_precip_*` reaches no RHS and `ATURAN_TURB_COUPLING` defaults to 0.
+   Switching either on changes plots, not physics. Radiation is no longer in this list — see item 3.
 
-6. **The grey opacity is Jupiter's calibration, not Uranus's.** `C_cia` and `opac_cal` were tuned so
+7. **The model is not reproducible above one thread.** A race, unlocated; see *Usage*. Every
+   measurement quoted in this file was taken at `OMP_NUM_THREADS=1`, which is the only setting under
+   which the byte-comparisons those measurements rest on are meaningful.
+
+8. **The corrected metric radius is off by default, and the warning attached to it is wrong.**
+   `metricRadius()` is the identity unless `ATURAN_METRIC_RADIUS` is set; `rad.z` runs 1..2, so the
+   metric puts the surface `L_atm` from the centre instead of R and every horizontal derivative is
+   25362/360 ≈ 70× too large. `1c4da64` predicted that correcting it would "quite possibly
+   destabilise" the model. Measured at nm=224 with `ATURAN_METRIC_RADIUS=25362`, it does the
+   opposite — the continuity residuum falls 0.308 → 0.043 and the meridional wind 12.57 → 0.24 m/s,
+   the latter matching the ~47× the correction applies. OLR/in moves 30.093 → 29.581. Whether to
+   flip the default is an open decision, but it should be taken against these numbers rather than
+   against the warning.
+
+9. **The grey opacity is Jupiter's calibration, not Uranus's.** `C_cia` and `opac_cal` were tuned so
    that Jupiter's photosphere lands at 0.25–0.35 bar. Nothing has recalibrated them here, and the
    per-planet lever is the runtime knob, not a second copy of the constant.
 
