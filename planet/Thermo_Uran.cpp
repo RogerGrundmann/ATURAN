@@ -113,9 +113,18 @@ void cUranusModel::Latent_Heat(){
                     Q_lat = lv_h2o * velocity_av * dh2o * inv_L_atm2;
 
                 // Ice latent heat — declared per-cell to avoid data race under OpenMP
+                //
+                // THE GRADIENT IS dh2o, NOT dnh3. This branch is the H2O deposition term: its
+                // condition tests h2o against q_Ice and its coefficient is ls_h2o, so the flux it
+                // multiplies has to be water's. It read dnh3 — ammonia's gradient driving water's
+                // latent heat, with a magnitude and a sign that have nothing to do with the
+                // species condensing. Every sibling branch here uses its own species (dh2s under
+                // ls_h2s, dnh3 under ls_nh3) and so does ATJUP, which carries dh2o at the
+                // equivalent line in Thermo_Jup.cpp. ATSAT and ATNEPT read dnh3 at theirs until
+                // they were corrected in the same pass as this.
                 double Latency_Ice = 0.0;
                 if(h2o.x[i][j][k] >= q_Ice)
-                    Latency_Ice = ls_h2o * velocity_av * dnh3 * inv_L_atm2;
+                    Latency_Ice = ls_h2o * velocity_av * dh2o * inv_L_atm2;
 
                 // H2S liquid latent heat
                 if(h2s.x[i][j][k] >= q_Rain_h2s)
