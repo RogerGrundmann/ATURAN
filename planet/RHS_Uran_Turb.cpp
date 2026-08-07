@@ -339,11 +339,71 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     static const double tmf_scale = [](){
         const char* e = getenv("ATURAN_THERMAL_MASSFLUX"); return e ? atof(e) : 1.0; }();
 
+    // ===== Radiative heating source (ATURAN_RAD_COUPLING, default 0 = off, bit-identical) =====
+    //
+    // ATJUP's term, ported unchanged in form (RHS_Jup_Turb.cpp). Converts the diagnostic radiative
+    // flux divergence Q_rad [W/m3], which Radiation.h fills, into a nondimensional temperature
+    // tendency: physically dT/dt = Q_rad/(rho*cp), nondimensionalised by this model's energy-
+    // equation scaling (radial length L_rad, velocity u_0, temperature t_ref):
+    //
+    //      radiation_t = rad_coupling * Q_rad * L_rad / (rho * cp_mix * u_0 * t_ref)
+    //
+    // rho is the LOCAL density, not r_mix: Q_rad comes from real radiative fluxes, so dividing by
+    // the local density is the correct conversion, and it is what makes the thin, cold upper
+    // atmosphere respond strongly instead of being held by the deep column's density. rho_mix
+    // already carries p_stat*1e5/(R_mix*T) (ChemistryUran.h), so it is read rather than recomputed;
+    // the ideal-gas fallback keeps the term alive if rho_mix has not been filled yet.
+    //
+    // L_rad is L_atm converted to METRES. L_atm is in km on all four models and this is the same
+    // conversion computeHydrostaticPressure() needs — the place the split's port dropped it.
+    //
+    // WHY THIS TERM MATTERS HERE, measured on this model rather than assumed. Over 224 iterations
+    // the equatorial column redistributes without heating: the deep loses 58.5 K (405.11 -> 346.63)
+    // and the top gains 61.9 K (77.15 -> 139.07) while the COLUMN MEAN barely moves
+    // (245.99 -> 243.87, -0.9%). So there is no heating excess to cancel; what is missing is
+    // anything that ties the top of the column to the planet's energy budget. With Q_rad absent
+    // from rhs_t the top has no thermal anchor and diffusion drags it to the column mean, which is
+    // why the photosphere reads 136 K against a T_eff(in) of 59 K and emits 30x the budget.
+    //
+    // rad_coupling = 1.0 IS THE PHYSICALLY CORRECT VALUE — the expression is the exact
+    // nondimensional form of dT/dt = Q/(rho*cp) under this scaling. Values >> 1 are NOT a scaling
+    // correction but a deliberate ACCELERATION factor, and ATJUP's note records why one is
+    // tempting: the radiative relaxation time vastly exceeds the step, so equilibration at
+    // coupling 1.0 needs far more iterations than a 224-step run provides. On Uranus, colder and
+    // with a longer radiative time constant than Jupiter, that separation is wider still. Expect
+    // coupling 1.0 to move this model very little in 224 iterations; that is a statement about the
+    // run length, not about the term.
+    static const double rad_coupling = [](){
+        const char* e = getenv("ATURAN_RAD_COUPLING"); return e ? atof(e) : 0.0; }();
+    double radiation_t = 0.0;
+    if(rad_coupling != 0.0){
+        const double T_phys = t.x[i][j][k] * t_ref;            // [K]
+        const double P_phys = p_stat.x[i][j][k] * 1.0e5;       // p_stat is in bar -> [Pa]
+        const double rho_f  = rho_mix.x[i][j][k];
+        const double rho    = (rho_f > 0.0 && std::isfinite(rho_f))
+                            ? rho_f
+                            : ((T_phys > 1.0) ? P_phys / (R_mix * T_phys) : 0.0);  // [kg/m3]
+        const double L_rad  = L_atm * 1.0e3;                   // atmosphere thickness [m]
+        if(rho > 0.0 && cp_mix > 0.0){
+            radiation_t = rad_coupling * Q_rad.x[i][j][k] * L_rad
+                        / (rho * cp_mix * u_0 * t_ref);
+            // Explicit-scheme stability limiter, ATJUP's value and reasoning: in a very low-density
+            // cell the 1/rho factor can make the tendency blow up and destabilise the pole. Guard
+            // non-finite FIRST — the cap's >/< tests are both false for NaN and would let it
+            // through — then cap, which preserves the sign and only bites on a runaway.
+            constexpr double rad_t_max = 0.5;
+            if(!std::isfinite(radiation_t)) radiation_t = 0.0;
+            else if(radiation_t >  rad_t_max) radiation_t =  rad_t_max;
+            else if(radiation_t < -rad_t_max) radiation_t = -rad_t_max;
+        }
+    }
+
     rhs_t.x[i][j][k] =
         + pressure_t
         - transport_t
         + diffusion_t / (re * pr) + diffusion_t * nue_t_s
-        - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k];
+        - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k]
+        + radiation_t;
 
     // Sponge layer: quadratic Rayleigh damping over the top quarter of the domain.
     // frac = 0 at i_sponge_start, 1 at i=im-1 → damping rate = alpha_sponge * frac².
