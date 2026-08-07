@@ -63,7 +63,14 @@ void cUranusModel::computeHydrostaticPressure(){
     static const double buoy_scale_local = [](){
         const char* e = getenv("ATURAN_BUOY_SCALE"); return e ? atof(e) : 1.0; }();
 
-    const double nd = 1.0e5 * L_atm / (u_0 * u_0);
+    // L_atm is in KILOMETRES (see the config: "extension of the troposhere in km"), and the length
+    // scale this nondimensionalisation needs is in metres. ATJUP writes the factor
+    // 1.0e5 * (L_atm * 1.0e3) / (u_0 * u_0); the port that brought the split here dropped the
+    // 1.0e3, so p_hydro came out 1000x too small and the split it feeds did essentially nothing.
+    // ATURAN_HYDRO_ND_KM=1 restores the dropped-factor version so the two can be attributed apart.
+    static const bool nd_km = [](){
+        const char* e = getenv("ATURAN_HYDRO_ND_KM"); return e && atoi(e) != 0; }();
+    const double nd = 1.0e5 * (L_atm * (nd_km ? 1.0 : 1.0e3)) / (u_0 * u_0);
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 0; j < jm; j++){
