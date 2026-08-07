@@ -364,13 +364,35 @@ public:
     //
     // metricRadius() is the established hook for the one place the models genuinely differ in the
     // limiter: ATJUP shifts rad.z itself at initialisation and so returns rm unchanged, while
-    // ATSAT shifts the metric factors here instead. ATURAN is in ATJUP's position for the simpler
-    // reason that it has no metric radius at all, so this is the identity unless
-    // ATURAN_METRIC_RADIUS is set, and the shared limiter reproduces the m.rad.z[i] the
-    // hand-written copy used, exactly.
+    // ATSAT shifts the metric factors here instead. ATURAN takes ATSAT's route and shifts the
+    // metric factors here.
+    //
+    // ON BY DEFAULT SINCE 2026-08-07. rad.z runs 1..2, so an unshifted metric puts Uranus's surface
+    // L_atm = 360 km from the centre instead of R = 25362 km, and every HORIZONTAL derivative is
+    // R/L_atm = 70x too large. That is a defect, not a modelling choice, and the default now
+    // corrects it. Set ATURAN_METRIC_RADIUS=0 to restore the unshifted metric — the run is then
+    // bit-identical to the pre-flip default.
+    //
+    // THE WARNING THIS REPLACES WAS WRONG, AND IT WAS MINE. 1c4da64 predicted that enabling this
+    // would "change everything and quite possibly destabilise" the model. Measured at nm=224,
+    // single-threaded, radiation on, it does the opposite:
+    //
+    //      quantity                        rad.z metric      corrected metric
+    //      continuity residuum                  0.308215              0.043029
+    //      max |v| meridional [m/s]              12.5715                0.2438
+    //      max |u| radial [m/s]                   8.3729                1.8497
+    //      max |w| zonal [m/s]                  130.1048              131.7194
+    //      OLR / input budget                     30.093                29.581
+    //
+    // The meridional wind falls ~50x, which is the ~47x this correction applies to horizontal
+    // derivatives: the double-digit meridional winds were an artefact of the broken metric, and the
+    // continuity equation converges 7x better without them. The zonal wind, which is prescribed, is
+    // untouched. It does NOT fix the photosphere (see README item 1 — that fault is vertical).
+    static constexpr double R_uranus_km = 25362.0;   // volumetric mean radius
     double metricRadius(double rm){
         static const double R_km = [](){
-            const char* e = getenv("ATURAN_METRIC_RADIUS"); return e ? atof(e) : 0.0; }();
+            const char* e = getenv("ATURAN_METRIC_RADIUS");
+            return e ? atof(e) : R_uranus_km; }();
         if(!(R_km > 0.0)) return rm;
         return rm + (R_km / L_atm - 1.0);
     }

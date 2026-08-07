@@ -165,7 +165,8 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
 | `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own serial Gauss-Seidel `computePressure()`; 1 = the shared red-black `PressureSolver<Planet>` |
 | `ATURAN_STEADY` | 1 | steady-state query in the report |
-| `ATURAN_LOCAL_RHO`, `ATURAN_METRIC_RADIUS`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
+| `ATURAN_METRIC_RADIUS` | **25362** | Uranus's mean radius in km, referring the 1/r metric factors to the planet rather than to `rad.z`'s 1..2. **ON by default** — set to `0` for the unshifted metric, which is bit-identical to the pre-flip default |
+| `ATURAN_LOCAL_RHO`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
 
 **Buoyancy and the hydrostatic split** — all default off; the model is bit-identical with them unset.
 
@@ -336,15 +337,27 @@ None of these stops a run; all of them affect what a result means.
    measurement quoted in this file was taken at `OMP_NUM_THREADS=1`, which is the only setting under
    which the byte-comparisons those measurements rest on are meaningful.
 
-8. **The corrected metric radius is off by default, and the warning attached to it is wrong.**
-   `metricRadius()` is the identity unless `ATURAN_METRIC_RADIUS` is set; `rad.z` runs 1..2, so the
-   metric puts the surface `L_atm` from the centre instead of R and every horizontal derivative is
-   25362/360 ≈ 70× too large. `1c4da64` predicted that correcting it would "quite possibly
-   destabilise" the model. Measured at nm=224 with `ATURAN_METRIC_RADIUS=25362`, it does the
-   opposite — the continuity residuum falls 0.308 → 0.043 and the meridional wind 12.57 → 0.24 m/s,
-   the latter matching the ~47× the correction applies. OLR/in moves 30.093 → 29.581. Whether to
-   flip the default is an open decision, but it should be taken against these numbers rather than
-   against the warning.
+8. **The metric radius was corrected and made the default, and results before that commit are not
+   comparable with results after it.** `rad.z` runs 1..2, so an unshifted metric put Uranus's
+   surface `L_atm` = 360 km from the centre instead of R = 25362 km, making every horizontal
+   derivative 70× too large. `metricRadius()` now defaults to the planet's radius;
+   `ATURAN_METRIC_RADIUS=0` restores the old metric bit-identically.
+
+   `1c4da64` predicted that correcting it would "change everything and quite possibly destabilise"
+   the model. Measured at nm=224, it does the opposite:
+
+   | quantity | `rad.z` metric | corrected |
+   |---|---|---|
+   | continuity residuum | 0.308215 | **0.043029** |
+   | max \|v\| meridional [m/s] | 12.5715 | **0.2438** |
+   | max \|u\| radial [m/s] | 8.3729 | 1.8497 |
+   | max \|w\| zonal [m/s] | 130.1048 | 131.7194 |
+   | OLR / input | 30.093 | 29.581 |
+
+   The meridional wind falls ~50×, matching the ~47× the correction applies to horizontal
+   derivatives — the double-digit meridional winds were an artefact — and continuity converges 7×
+   better. The zonal wind is prescribed and is untouched. **This is not a fix for item 1**: it moves
+   OLR/in by 1.7 %, because that fault is vertical and this correction is horizontal.
 
 9. **The grey opacity is Jupiter's calibration, not Uranus's.** `C_cia` and `opac_cal` were tuned so
    that Jupiter's photosphere lands at 0.25–0.35 bar. Nothing has recalibrated them here, and the
