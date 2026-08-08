@@ -114,6 +114,9 @@ void SaturationAdjustment<Planet>::run(
     double t_u_sat  = 0.0, p_u_sat  = 0.0;
     double q_v_b_sat = 0.0, q_c_b_sat = 0.0, q_i_b_sat = 0.0;
     double saturation = 0.0;
+    // Which cell gets reported is decided by POSITION and not by thread arrival order; -1 is
+    // "no cell found yet", and every real key is >= 0. See the critical block below.
+    long long sat_key = -1;
 
     // -----------------------------------------------------------------------
     // Main saturation-adjustment loop — fully independent per cell
@@ -232,8 +235,31 @@ void SaturationAdjustment<Planet>::run(
                 }
 
                 if(cell_found){
+                    // ===== THE WINNER IS CHOSEN BY POSITION, NOT BY ARRIVAL ORDER =====
+                    //
+                    // This block used to assign unconditionally, so the cell reported was
+                    // whichever thread happened to enter the critical section LAST. That is not
+                    // a race — the section is properly synchronised and writes reporting
+                    // variables only, and every output file is bit-identical across it — but it
+                    // made the LOG non-comparable above one thread: two runs of the same binary
+                    // at the same thread count named different cells.
+                    //
+                    // The loop nest is k, then j, then i, so serial traversal visits keys in
+                    // increasing order and "the last cell found wins" is exactly "the largest
+                    // key wins". Taking the maximum therefore reproduces the single-threaded
+                    // answer at ANY thread count: this is a determinism fix, not a change of
+                    // which cell is meant. The key is built in the nest's own order for that
+                    // reason — (i,j,k) would be just as deterministic and would pick a DIFFERENT
+                    // cell, silently changing every reported diagnostic.
+                    //
+                    // ATURAN and ATNEPT carry the same block in their own inherited routines
+                    // (SaturationAdjustment{Uran,Nept}.cpp, the default there) and took this
+                    // same fix first; this is the shared copy that ATSAT and ATJUP run.
+                    const long long key = ((long long)k * m.jm + j) * m.im + i;
                     #pragma omp critical
+                    if(key > sat_key)
                     {
+                        sat_key         = key;
                         sat_found       = true;
                         iter_prec_found = cell_iter;
                         i_sat = i; j_sat = j; k_sat = k;
