@@ -207,6 +207,52 @@ void cUranusModel::printTemperatureAttribution(){
     printf("  %9.4f\n", tmean / im);
 }
 
+bool cUranusModel::vbudget_enabled(){
+    static const bool v = [](){ const char* e = getenv("ATURAN_VBUDGET"); return e && atoi(e) != 0; }();
+    return v;
+}
+int cUranusModel::vbudget_level_i(){
+    static const int v = [](){ const char* e = getenv("ATURAN_VBUDGET_I"); return e ? atoi(e) : 20; }();
+    return v;
+}
+int cUranusModel::vbudget_meridian_k(){
+    static const int v = [](){ const char* e = getenv("ATURAN_VBUDGET_K"); return e ? atoi(e) : 180; }();
+    return v;
+}
+
+// The six terms of rhs_v against LATITUDE, at one level and one meridian. Signs are as they enter
+// the sum, so the six add to the total. dphdthe is the only baroclinic term — the horizontal
+// gradient of p_hydro — and is identically zero unless ATURAN_HYDRO_SPLIT=1.
+void cUranusModel::printMeridionalBudget(){
+    if(!vbudget_enabled() || vbud_tot.empty()) return;
+    const int ib = vbudget_level_i(), kb = vbudget_meridian_k();
+
+    std::cout << std::endl
+        << "      ATURAN: meridional budget, level i = " << ib << " meridian k = " << kb
+        << ", RK stage 0, nondimensional dv/dt" << std::endl
+        << "        lat        v        dp_dyn      dp_hydro     transport"
+        << "     diffusion      Coriolis   centrifugal        dv/dt" << std::endl;
+
+    double a_dp=0, a_dph=0, a_tr=0, a_di=0, a_co=0, a_ce=0, a_to=0;
+    for(int j = 1; j < jm-1; j += 10){
+        printf("      %5.0f %9.5f %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e\n",
+               90.0 - (double)j, v.x[ib][j][kb] * u_0,
+               vbud_dp[j], vbud_dph[j], vbud_trans[j],
+               vbud_diff[j], vbud_cor[j], vbud_cent[j], vbud_tot[j]);
+    }
+    for(int j = 1; j < jm-1; j++){
+        a_dp += fabs(vbud_dp[j]);   a_dph += fabs(vbud_dph[j]);
+        a_tr += fabs(vbud_trans[j]); a_di += fabs(vbud_diff[j]);
+        a_co += fabs(vbud_cor[j]);  a_ce  += fabs(vbud_cent[j]);
+        a_to += fabs(vbud_tot[j]);
+    }
+    printf("      %5s %9s %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e\n",
+           "SUM|.|", "", a_dp, a_dph, a_tr, a_di, a_co, a_ce, a_to);
+    std::cout << "      the baroclinic share is dp_hydro / sum of all six = "
+              << (a_dp+a_dph+a_tr+a_di+a_co+a_ce > 0.0
+                  ? a_dph / (a_dp+a_dph+a_tr+a_di+a_co+a_ce) : 0.0) << std::endl;
+}
+
 // One line per layer: the five terms of rhs_t, converted to the kelvin they contribute to THIS
 // iteration. The integrator forms y_{n+1} = y_n + dt/6 * (k1 + 2k2 + 2k3 + k4); these are k1, so
 // a term's contribution is dt * term * t_ref kelvin if the four stages agree, which is the right
@@ -646,6 +692,7 @@ void cUranusModel::Run(){
 
         if(iter_n % checkpoint == 0){
             printMinMax();
+            printMeridionalBudget();         // no-op unless ATURAN_VBUDGET is set
             printTemperatureBudget();        // no-op unless ATURAN_TBUDGET is set
             printTemperatureAttribution();   // no-op unless ATURAN_TATTRIB is set
             writeData();
@@ -737,6 +784,11 @@ void cUranusModel::resetArrays(){
 
     // Item 1's budget instrument. Allocated only when it is switched on, so the default build
     // carries six empty vectors and the recording branch in RHSUran is a size check that fails.
+    if(vbudget_enabled()){
+        vbud_dp.assign(jm, 0.0);   vbud_dph.assign(jm, 0.0);  vbud_trans.assign(jm, 0.0);
+        vbud_diff.assign(jm, 0.0); vbud_cor.assign(jm, 0.0);  vbud_cent.assign(jm, 0.0);
+        vbud_tot.assign(jm, 0.0);
+    }
     if(tbudget_enabled()){
         tbud_pres.assign(im, 0.0);  tbud_trans.assign(im, 0.0);
         tbud_diff.assign(im, 0.0);  tbud_tmf.assign(im, 0.0);

@@ -527,6 +527,23 @@ public:
     void tattrib(const char* label);
     void printTemperatureAttribution();
 
+    // ===== AND THE SAME QUESTION FOR THE MERIDIONAL MOMENTUM =====
+    //
+    // Item 1's instruments answered "what moves T". This answers "what moves v", which is the
+    // meridional-circulation question: 4201957 and 8b284cb corrected both body-force directions and
+    // neither moved the circulation, because a curl-free force is absorbed by the pressure
+    // projection. The only genuinely baroclinic term is dphdthe_term, the horizontal gradient of
+    // p_hydro, live only under ATURAN_HYDRO_SPLIT=1 — and it is the only term measured to change
+    // the overturning cell COUNT. This records all six terms of rhs_v against LATITUDE at one
+    // level and one meridian, so "too weak" can be replaced by a number.
+    //
+    // MEASUREMENT ONLY, off unless ATURAN_VBUDGET is set. One (i,k) means one thread writes.
+    static bool vbudget_enabled();
+    static int  vbudget_level_i();
+    static int  vbudget_meridian_k();
+    std::vector<double> vbud_dp, vbud_dph, vbud_trans, vbud_diff, vbud_cor, vbud_cent, vbud_tot;
+    void printMeridionalBudget();
+
     std::vector<double> tropopause_layers; // keep the tropopause layer index
     std::vector<std::vector<int> > i_topography;
     std::vector<double> u_trans;

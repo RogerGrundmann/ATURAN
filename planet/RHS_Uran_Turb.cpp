@@ -564,6 +564,19 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - Coriolis    * scale_Cor * Coriolis_the
         + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_the;
 
+    // The six terms of rhs_v recorded against latitude, one level and one meridian, at stage 0.
+    // Signs are as they enter the sum above, so the six add to vbud_tot. See cUranusModel.h.
+    if(tbud_stage == 0 && i == vbudget_level_i() && k == vbudget_meridian_k()
+       && !vbud_tot.empty() && j >= 0 && j < (int)vbud_tot.size()){
+        vbud_dp[j]    = -dpdthe_term;
+        vbud_dph[j]   = -dphdthe_term;
+        vbud_trans[j] = -transport_v;
+        vbud_diff[j]  = diffusion_v / re_eff + diffusion_v * nue_t;
+        vbud_cor[j]   = -Coriolis * scale_Cor * Coriolis_the;
+        vbud_cent[j]  = (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_the;
+        vbud_tot[j]   = rhs_v.x[i][j][k];
+    }
+
     rhs_w.x[i][j][k] =
         - dpdphi_term
         - dphdphi_term
