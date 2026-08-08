@@ -167,9 +167,40 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
 
     // ===== Coriolis and centrifugal forces =====
+    // ===== TWO OF THE THREE CORIOLIS COMPONENTS DEFLECTED TO THE LEFT =====
+    //
+    // Ported from ATJUP ec698e1, which ATURAN never received. With theta the COLATITUDE and v the
+    // theta-component (so +v is southward), -2*Omega x u is
+    //
+    //     a_r = +2*Omega*sin*w    a_theta = +2*Omega*cos*w    a_phi = -2*Omega*(cos*v + sin*u)
+    //
+    // and all three enter rhs_* through a minus, so each variable below must hold -a.
+    //
+    // Coriolis_rad already did. Coriolis_the held +2*Omega*cos*w and so delivered -a_theta: an
+    // eastward wind in the northern hemisphere was turned NORTHWARD. The physical check is
+    // unambiguous — eastward flow at northern mid-latitudes must go RIGHT, which is south, which
+    // is +e_theta. Coriolis_phi held +2*Omega*(-cos*v + sin*u): the sin*u half was right and the
+    // cos*v half carried the wrong sign, so southward flow in the north was turned EAST instead of
+    // west, again to the left. That mixture is why it survived — Coriolis_phi was not plus or
+    // minus any consistent expression, so neither sign looked obviously right.
+    //
+    // THIS IS THE COMPONENT THAT CAN MOVE THE CIRCULATION. Unlike the centrifugal force corrected
+    // in 4201957, Coriolis is velocity-dependent and NOT curl-free, so the pressure projection
+    // cannot absorb it — and it is Coriolis that closes an overturning cell.
+    //
+    // ATURAN_CORIOLIS_LEGACY=1 restores the two pre-port signs.
+    //
+    // NOT FIXED HERE, and it is a separate defect in the same term: Coriolis_phi enters rhs_w
+    // WITHOUT the scale_Cor = L_atm/u_0 factor that rhs_u and rhs_v apply to the other two
+    // components, so the zonal component is 3600x weaker than its siblings. That belongs to the
+    // unit-system port (ATJUP af0446d, which carries one nd_cor on all three) and folding a 3600x
+    // magnitude change into a sign fix would make neither measurable.
+    static const bool cor_legacy = [](){
+        const char* e = getenv("ATURAN_CORIOLIS_LEGACY"); return e && atoi(e) != 0; }();
     double Coriolis_rad  = -2.0 * omega * sinthe * w_ijk;
-    double Coriolis_the  = +2.0 * omega * costhe * w_ijk;
-    double Coriolis_phi  = +2.0 * omega * (-costhe * v_ijk + sinthe * u_ijk);
+    double Coriolis_the  = (cor_legacy ? +2.0 : -2.0) * omega * costhe * w_ijk;
+    double Coriolis_phi  = +2.0 * omega * ((cor_legacy ? -1.0 : +1.0) * costhe * v_ijk
+                                           + sinthe * u_ijk);
 
     // ===== THE CENTRIFUGAL FORCE POINTS AWAY FROM THE ROTATION AXIS =====
     //
