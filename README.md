@@ -176,7 +176,8 @@ and turbulence remain diagnostic-only here.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `ATURAN_BUOY_SCALE` | 1.0 | multiplier on the buoyancy in `rhs_u` |
+| `ATURAN_BUOY_SCALE` | 1.0 | multiplier on the buoyancy, and since the ND fix it means **one** thing: `rhs_u` and `p_hydro` now carry the same factor, so 1.0 is the physically correct setting in both. It used to scale two expressions differing by 1e8 |
+| `ATURAN_BUOY_ND_LEGACY` | 0 | restore `rhs_u`'s old buoyancy factor, 1e8 short. Only reachable with `ATURAN_HYDRO_SPLIT=0`; see the note below on why the corrected factor is unusable there |
 | `ATURAN_BUOY_REF` | 0 | ATSAT's device: subtract the area-weighted horizontal mean in place |
 | `ATURAN_HYDRO_SPLIT` | **1** | ATJUP's: carry the buoyancy in `p_hydro`, drop the radial term from `rhs_u`, let the horizontal gradient enter `rhs_v`/`rhs_w`. **Default flipped on** — it is the only thermal driver of meridional circulation this model has; `=0` restores the old default bit-identically. See item 10 |
 | `ATURAN_HYDRO_REF` | 0 | integrate downward from the top instead of up from the deep boundary. Not the intended setting |
@@ -486,6 +487,14 @@ None of these stops a run; all of them affect what a result means.
     **It does nothing for item 1.** OLR/in 20.381 → 20.380 W/m², T(τ=1) 135.98 → 135.98 K. This was
     mis-ranked as item 1's fix for a day; `aa6f739` had already located that fault in
     `damp_wiggles`.
+
+    **A correctly scaled buoyancy cannot be carried in `rhs_u` at all**, which is the strongest
+    argument for this default. `rhs_u`'s buoyancy factor was 1e8 short of `p_hydro`'s — missing both
+    the 1e5 that turns `p_stat` in bar into pascals and the 1e3 that turns `L_atm` in km into
+    metres. Giving it the correct factor and running with `ATURAN_HYDRO_SPLIT=0` produces **max |u|
+    = 424.6 m/s** against 0.604, and an upper-region roughness 128× worse — the *"ozillations in the
+    upper region"* the code comment had warned of since before it was measured. The old expression
+    was stable **because it did nothing**. Buoyancy has to go through `p_hydro`.
 
     **No sibling defaults it on** — ATJUP falls back to `ATJUP_NONDIM` (also 0), ATNEPT is 0, ATSAT
     has no such knob. ATURAN is deliberately first, being the model measured to have no other

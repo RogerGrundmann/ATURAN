@@ -568,12 +568,45 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     static const int buoy_ref_on = [](){
         const char* e = getenv("ATURAN_BUOY_REF"); return e ? atoi(e) : 0; }();
 
-    // Buoyancy as it enters rhs_u. Unchanged by default; zero when the split carries it.
+    // ===== ONE FACTOR, SO ATURAN_BUOY_SCALE MEANS ONE THING =====
+    //
+    // This expression and computeHydrostaticPressure() both scale a buoyancy by ATURAN_BUOY_SCALE,
+    // and its comment claimed "the same factor rhs_u puts on the buoyancy, read the same way, so
+    // the two cannot drift apart". They had already drifted, by 1e8:
+    //
+    //     rhs_u    (as written)   buoy_scale * buoyancy *              L_atm       / (u_0*u_0)
+    //     p_hydro  (nd)           buoy_scale * buoyancy * 1.0e5 * (L_atm * 1.0e3) / (u_0*u_0)
+    //
+    // p_hydro's is the CORRECT one. b_raw is g*p/(r_mix*R_mix*T) with p_stat in BAR, so it needs
+    // 1.0e5 to become an acceleration in m/s^2, and the nondimensionalisation needs L_atm in
+    // METRES, hence the 1.0e3 — L_atm is in km on all four models. rhs_u was short of both.
+    //
+    // So one knob value could not be right for both paths, and the sweep that measured it was
+    // measuring an artefact: with the split on, ATURAN_BUOY_SCALE=1e5 put p_hydro 1e5 over and
+    // drove max |v| to 5.8e6 m/s. That was the knob, not the physics.
+    //
+    // rhs_u now carries p_hydro's factor verbatim, so ATURAN_BUOY_SCALE=1.0 is the physically
+    // correct setting in BOTH paths and the knob scales one quantity rather than two different
+    // ones.
+    //
+    // BIT-IDENTICAL BY DEFAULT, because 1e53213 made the split the default and this branch runs
+    // only when it is OFF. What changes is the ATURAN_HYDRO_SPLIT=0 path, which is exactly the
+    // path the old factor made inert: the comment above records that a correctly scaled
+    // density-anomaly buoyancy "leads to ozillations in the upper region", and the version left in
+    // place was stable precisely BECAUSE it did nothing. ATURAN_BUOY_ND_LEGACY=1 restores the short
+    // factor so that claim can be tested rather than inherited.
+    static const bool buoy_nd_legacy = [](){
+        const char* e = getenv("ATURAN_BUOY_ND_LEGACY"); return e && atoi(e) != 0; }();
+    const double buoy_nd = buoy_nd_legacy
+                         ? (L_atm / (u_0 * u_0))                        // the old, 1e8 short
+                         : (1.0e5 * (L_atm * 1.0e3) / (u_0 * u_0));     // p_hydro's, correct
+
+    // Buoyancy as it enters rhs_u. Zero when the split carries it, which is the default.
     double buoyancy_u = 0.0;
     if(hydro_split == 0 && t.x[i][j][k] > 0.0){
         const double b_raw = g * (p_stat.x[i][j][k] + p_dyn.x[i][j][k])
                            / (r_mix * R_mix * t.x[i][j][k] * t_ref);
-        buoyancy_u = buoy_scale * buoyancy * (L_atm / (u_0 * u_0))
+        buoyancy_u = buoy_scale * buoyancy * buoy_nd
                    * (buoy_ref_on != 0 ? (b_raw - buoy_ref_level[i]) : b_raw);
     }
     double dphdthe_term = 0.0, dphdphi_term = 0.0;
