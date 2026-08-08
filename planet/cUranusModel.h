@@ -452,8 +452,58 @@ public:
     int n, n_print, n_paraview, panorama, panorama_step;
     int iter, iter_max, j_max;
     int velocity_iter, pressure_iter;
-    int iter_n, panorama_cnt;
+    // iter_n = 0 because it is PRINTED BEFORE IT IS EVER ASSIGNED. PrintMsg_Uran.cpp:185 reports
+    // "iter_n = ..." during start-up, and the first assignment is the loop header in
+    // cUranusModel.cpp. Reading it there is undefined behaviour and the value shown was whatever
+    // the stack happened to hold: it read 848 in one build of this file and 4096 in the next, with
+    // no change to the model between them. Nothing depends on the value — the loop assigns it —
+    // so this only stops a start-up line from making two builds look different when they are not.
+    // panorama_cnt is assigned in Run() before use and is initialised here only for symmetry.
+    int iter_n = 0, panorama_cnt = 0;
     int i_res, j_res, k_res;
+
+    // ===== README ITEM 1 INSTRUMENT: WHERE THE TEMPERATURE TENDENCY COMES FROM =====
+    //
+    // Item 1 says the column redistributes without heating — the deep loses 58.5 K, the top gains
+    // 61.9 K, the mean moves -0.9 % — and that what is missing is anything tying the top to the
+    // energy budget. That is a statement about which TERM moves each layer, and nothing in this
+    // model could answer it: rhs_t is a sum of five terms and only the sum was ever visible.
+    //
+    // This records the five separately, per layer, for ONE column, at RK stage 0 — the stage
+    // evaluated at the current state, so the numbers are the decomposition of dT/dt at the start
+    // of the step rather than a mixture of the four stage evaluations.
+    //
+    // MEASUREMENT ONLY. Off unless ATURAN_TBUDGET is set; nothing is written or printed when off
+    // and the model is bit-identical. One column means one (j,k), so exactly one thread ever
+    // writes these — no synchronisation is needed and the result does not depend on thread count.
+    static bool tbudget_enabled();
+    static int  tbudget_column_j();
+    static int  tbudget_column_k();
+    int tbud_stage = -1;                    // RK stage currently being evaluated, -1 = not in RK
+    std::vector<double> tbud_pres, tbud_trans, tbud_diff, tbud_tmf, tbud_rad, tbud_tot;
+    void printTemperatureBudget();
+
+    // ===== AND WHO ACTUALLY MOVES T, WHICH IS A DIFFERENT QUESTION =====
+    //
+    // The budget above decomposes rhs_t. Measured over 224 iterations, rhs_t turned out to explain
+    // under 2 % of the temperature change at the top of the column and to carry the WRONG SIGN at
+    // several layers, so decomposing it answers a question that does not decide item 1. Temperature
+    // is also written DIRECTLY, outside the integrator, by damp_wiggles, by the saturation
+    // adjustment, by the boundary conditions and by restoreVar, and none of those appear in rhs_t.
+    //
+    // This attributes the column's ACTUAL kelvin to each of those in turn: snapshot t at the top of
+    // the iteration, then difference it after every stage that could have touched it. Stages are
+    // keyed BY NAME rather than by call order, because the physics block is gated on
+    // iter_n % 2 == 0 and the odd and even iterations therefore run different sequences.
+    //
+    // MEASUREMENT ONLY, off unless ATURAN_TATTRIB is set, and it shares ATURAN_TBUDGET_J/_K.
+    static bool tattrib_enabled();
+    std::vector<std::string>         tatt_names;
+    std::vector<std::vector<double> > tatt_dsum;   // [stage][layer], kelvin summed over iterations
+    std::vector<double>              tatt_prev;    // last snapshot of the column
+    void tattribBegin();
+    void tattrib(const char* label);
+    void printTemperatureAttribution();
 
     std::vector<double> tropopause_layers; // keep the tropopause layer index
     std::vector<std::vector<int> > i_topography;

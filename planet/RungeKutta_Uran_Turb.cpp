@@ -162,6 +162,10 @@ void cUranusModel::RungeKuttaUran(){
         const double c_in = (stage == 0 || stage == 1) ? 0.5 * dt : (stage == 2 ? dt : 0.0);
         const double wgt  = (stage == 0 || stage == 3) ? 1.0 : 2.0;
 
+        // Tells RHSUran which stage it is inside, so item 1's budget instrument can record the
+        // decomposition at stage 0 only — the evaluation at y_n. Read-only in the loop below.
+        tbud_stage = stage;
+
         // ---- pass A: evaluate the right-hand sides ----
         #pragma omp parallel for collapse(2) schedule(static)
         for(int i = 1; i < im-1; i++){

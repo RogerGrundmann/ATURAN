@@ -163,7 +163,10 @@ and turbulence remain diagnostic-only here.
 |----------|---------|--------|
 | `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
 | `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
-| `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own serial Gauss-Seidel `computePressure()`; 1 = the shared red-black `PressureSolver<Planet>` |
+| `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own Gauss-Seidel (serial since the race fix); 1 = the shared red-black `PressureSolver<Planet>` |
+| `ATURAN_TBUDGET` | 0 | Per-layer decomposition of `rhs_t` into its five terms, one column, RK stage 0. Measurement only. See item 1 |
+| `ATURAN_TATTRIB` | 0 | Per-stage attribution of the column's actual kelvin — which routine moved `t`, not which term. Measurement only. **This is the one that answers item 1** |
+| `ATURAN_TBUDGET_J` / `_K` | 90 / 180 | Column both instruments report, defaulting to the equator at mid-longitude |
 | `ATURAN_STEADY` | 1 | steady-state query in the report |
 | `ATURAN_METRIC_RADIUS` | **25362** | Uranus's mean radius in km, referring the 1/r metric factors to the planet rather than to `rad.z`'s 1..2. **ON by default** — set to `0` for the unshifted metric, which is bit-identical to the pre-flip default |
 | `ATURAN_LOCAL_RHO`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
@@ -307,11 +310,40 @@ None of these stops a run; all of them affect what a result means.
    | 1 | 405.11 | 253.58 | 77.15 | 245.99 |
    | 28 | 346.63 | 246.31 | 139.07 | 243.87 |
 
-   The deep loses 58.5 K, the top gains 61.9 K, and the **mean moves −0.9 %**. Thermal diffusion
-   flattens the initial adiabat and nothing anchors the top of the column to the planet's energy
-   budget, so the photosphere drifts to roughly the column mean. Until this is fixed, **the opacity
-   constants cannot be judged against this model at all**: a photosphere 77 K too warm says nothing
-   about kappa. This remains the highest-value open item.
+   The deep loses 58.5 K, the top gains 61.9 K, and the **mean moves −0.9 %**. Until this is fixed,
+   **the opacity constants cannot be judged against this model at all**: a photosphere 77 K too warm
+   says nothing about kappa. This remains the highest-value open item.
+
+   **The flattener is `damp_wiggles`, and it is not any term in the temperature equation.** This
+   item used to say "thermal diffusion flattens the initial adiabat". The mechanism is right and the
+   code named was wrong. Measured with `ATURAN_TATTRIB` — snapshot the column, difference it after
+   every stage that writes `t` — cumulative K over 16 iterations at the equator:
+
+   | stage | i=0 | i=20 | i=38 | i=39 | i=40 | col. mean |
+   |---|---|---|---|---|---|---|
+   | RungeKutta (all of `rhs_t`) | 0.000 | −0.991 | +0.252 | +0.216 | 0.000 | −1.654 |
+   | **`damp_wiggles(t)`** | **−6.775** | **−2.411** | **+10.298** | **+14.312** | **+7.228** | **−0.012** |
+   | BoundaryConds | −8.642 | 0.000 | 0.000 | 0.000 | +8.625 | −0.000 |
+   | SaturationAdjust | 0.000 | +1.059 | +0.001 | +0.001 | +0.001 | +1.471 |
+   | all others | 0 | 0 | 0 | 0 | 0 | 0 |
+
+   `damp_wiggles(t)` supplies **98 %** of the warming at i=38 and i=39 while the entire temperature
+   equation supplies +0.25 and +0.22. Its **column mean is −0.012 K** against −6.8 at the deep and
+   +14.3 at the top — the signature of a pure redistributor, which is exactly what this item
+   describes. It is a Shapiro 1-2-1 filter run at `strength = 1.0` every iteration with the vertical
+   axis enabled, `damp_wiggles(t, nullptr, true, true, true)`: a filter for grid-scale noise acting
+   as the dominant vertical heat transport. The first test is `along_i = false` for `t`, or a lower
+   strength, keeping the horizontal de-wiggling.
+
+   **Ranking terms inside `rhs_t` cannot decide this item.** `ATURAN_TBUDGET` decomposes `rhs_t` and
+   finds the `thermalmassflux` sink carrying 92–111 % of it and diffusion never above 0.2 % — but
+   `rhs_t` explains **under 2 %** of the actual change at the top and carries the **wrong sign** at
+   i=5 and i=20. Both instruments are needed, and the second is the one that answers the question.
+
+   **i=0 and i=40 have every `rhs_t` term exactly zero.** The integrator runs `i = 1 … im−2`; top
+   and bottom are `bcRadius()` extrapolations. The photosphere is not weakly anchored to the energy
+   budget — it is an extrapolation of the layers beneath it, which is why item 3's radiative coupling
+   moves it the right way and can never arrive: at i=40 that term multiplies nothing.
 
    What has been ruled out by measurement, so it is not re-derived:
    - **Latent heat is not the source.** `Q_Latent`/`Q_Sensible` reach no RHS, and the path that does

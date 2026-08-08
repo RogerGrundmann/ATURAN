@@ -405,6 +405,19 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k]
         + radiation_t;
 
+    // Item 1's instrument: the same five terms, recorded separately for one column at stage 0.
+    // Signs are as they enter the sum above, so the five add to tbud_tot exactly. See the note on
+    // the members in cUranusModel.h. Inert unless ATURAN_TBUDGET is set.
+    if(tbud_stage == 0 && j == tbudget_column_j() && k == tbudget_column_k()
+       && !tbud_tot.empty() && i >= 0 && i < (int)tbud_tot.size()){
+        tbud_pres[i]  = pressure_t;
+        tbud_trans[i] = -transport_t;
+        tbud_diff[i]  = diffusion_t / (re * pr) + diffusion_t * nue_t_s;
+        tbud_tmf[i]   = -tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k];
+        tbud_rad[i]   = radiation_t;
+        tbud_tot[i]   = rhs_t.x[i][j][k];
+    }
+
     // Sponge layer: quadratic Rayleigh damping over the top quarter of the domain.
     // frac = 0 at i_sponge_start, 1 at i=im-1 → damping rate = alpha_sponge * frac².
     const double frac_sp = std::max(0.0, (double)(i - (im - 1) * 3 / 4) / (double)((im - 1) / 4));

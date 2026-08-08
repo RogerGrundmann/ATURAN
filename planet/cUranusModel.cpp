@@ -123,6 +123,129 @@ static int press_solver_shared(){
     return v;
 }
 
+// README item 1's instrument. ATURAN_TBUDGET=1 turns it on; ATURAN_TBUDGET_J and _K choose the
+// column, defaulting to the equator at mid-longitude, which is the column item 1's own table was
+// taken from. See the members in cUranusModel.h for why it is one column and one RK stage.
+bool cUranusModel::tbudget_enabled(){
+    static const bool v = [](){ const char* e = getenv("ATURAN_TBUDGET"); return e && atoi(e) != 0; }();
+    return v;
+}
+int cUranusModel::tbudget_column_j(){
+    static const int v = [](){ const char* e = getenv("ATURAN_TBUDGET_J"); return e ? atoi(e) : 90; }();
+    return v;
+}
+int cUranusModel::tbudget_column_k(){
+    static const int v = [](){ const char* e = getenv("ATURAN_TBUDGET_K"); return e ? atoi(e) : 180; }();
+    return v;
+}
+
+bool cUranusModel::tattrib_enabled(){
+    static const bool v = [](){ const char* e = getenv("ATURAN_TATTRIB"); return e && atoi(e) != 0; }();
+    return v;
+}
+
+// Snapshot the column at the top of an iteration. Everything after this is attributed to whichever
+// stage ran between two consecutive tattrib() calls.
+void cUranusModel::tattribBegin(){
+    if(!tattrib_enabled()) return;
+    const int jb = tbudget_column_j(), kb = tbudget_column_k();
+    tatt_prev.assign(im, 0.0);
+    for(int i = 0; i < im; i++) tatt_prev[i] = t.x[i][jb][kb] * t_ref;
+}
+
+// Difference the column against the previous snapshot and charge the difference to `label`.
+// Keyed by name, not by call order: the iter_n % 2 gate means odd and even iterations execute
+// different stage sequences, and an index would silently mis-attribute every odd iteration.
+void cUranusModel::tattrib(const char* label){
+    if(!tattrib_enabled() || tatt_prev.empty()) return;
+    const int jb = tbudget_column_j(), kb = tbudget_column_k();
+
+    int idx = -1;
+    for(size_t s = 0; s < tatt_names.size(); s++)
+        if(tatt_names[s] == label){ idx = (int)s; break; }
+    if(idx < 0){
+        tatt_names.push_back(label);
+        tatt_dsum.push_back(std::vector<double>(im, 0.0));
+        idx = (int)tatt_names.size() - 1;
+    }
+
+    for(int i = 0; i < im; i++){
+        const double cur = t.x[i][jb][kb] * t_ref;
+        tatt_dsum[idx][i] += cur - tatt_prev[i];
+        tatt_prev[i]       = cur;
+    }
+}
+
+// Cumulative kelvin charged to each stage since the run began, at the layers item 1 quotes. The
+// column mean is the last column: a stage that only redistributes shows large opposite entries at
+// the deep and the top and ~0 there, and a stage that adds or removes heat does not.
+void cUranusModel::printTemperatureAttribution(){
+    if(!tattrib_enabled() || tatt_names.empty()) return;
+
+    const int probe[] = {0, 5, 20, 30, 38, 39, 40};
+    const int np = (int)(sizeof(probe)/sizeof(probe[0]));
+
+    std::cout << std::endl
+        << "      ATURAN: who moved T, column j = " << tbudget_column_j()
+        << " k = " << tbudget_column_k() << ", cumulative K since iteration 1" << std::endl
+        << "      stage                ";
+    for(int q = 0; q < np; q++) printf("     i=%-2d ", probe[q]);
+    printf("  col.mean\n");
+
+    std::vector<double> tot(im, 0.0);
+    for(size_t s = 0; s < tatt_names.size(); s++){
+        printf("      %-20s", tatt_names[s].c_str());
+        for(int q = 0; q < np; q++) printf(" %9.3f", tatt_dsum[s][probe[q]]);
+        double mean = 0.0;
+        for(int i = 0; i < im; i++){ mean += tatt_dsum[s][i]; tot[i] += tatt_dsum[s][i]; }
+        printf("  %9.4f\n", mean / im);
+    }
+    printf("      %-20s", "ALL STAGES");
+    for(int q = 0; q < np; q++) printf(" %9.3f", tot[probe[q]]);
+    double tmean = 0.0;
+    for(int i = 0; i < im; i++) tmean += tot[i];
+    printf("  %9.4f\n", tmean / im);
+}
+
+// One line per layer: the five terms of rhs_t, converted to the kelvin they contribute to THIS
+// iteration. The integrator forms y_{n+1} = y_n + dt/6 * (k1 + 2k2 + 2k3 + k4); these are k1, so
+// a term's contribution is dt * term * t_ref kelvin if the four stages agree, which is the right
+// scale to read even where they do not. The five columns add to dT/dt by construction — the point
+// is not the sum but WHICH term carries it, and with what sign, at each height.
+void cUranusModel::printTemperatureBudget(){
+    if(!tbudget_enabled() || tbud_tot.empty()) return;
+
+    const int    jb = tbudget_column_j(), kb = tbudget_column_k();
+    const double f  = dt * t_ref;                 // nondimensional tendency -> K per iteration
+
+    std::cout << std::endl
+        << "      ATURAN: temperature budget, column j = " << jb << " k = " << kb
+        << ", RK stage 0, K per iteration" << std::endl
+        << "         i     T[K]      pressure     transport     diffusion   thermalmass"
+        << "     radiation        dT/dt" << std::endl;
+
+    double s_pres = 0.0, s_trans = 0.0, s_diff = 0.0, s_tmf = 0.0, s_rad = 0.0, s_tot = 0.0;
+    for(int i = 0; i < im; i++){
+        printf("      %4d %8.2f  %12.5e %12.5e %12.5e %12.5e %12.5e %12.5e\n",
+               i, t.x[i][jb][kb] * t_ref,
+               f * tbud_pres[i], f * tbud_trans[i], f * tbud_diff[i],
+               f * tbud_tmf[i],  f * tbud_rad[i],   f * tbud_tot[i]);
+        s_pres += f * tbud_pres[i];   s_trans += f * tbud_trans[i];
+        s_diff += f * tbud_diff[i];   s_tmf   += f * tbud_tmf[i];
+        s_rad  += f * tbud_rad[i];    s_tot   += f * tbud_tot[i];
+    }
+    printf("      %4s %8s  %12.5e %12.5e %12.5e %12.5e %12.5e %12.5e\n",
+           "sum", "", s_pres, s_trans, s_diff, s_tmf, s_rad, s_tot);
+
+    // The column sum is the closure item 1 actually cares about. If the column neither gains nor
+    // loses heat while its top warms and its deep cools, this line is ~0 while the per-layer dT/dt
+    // above is not — that is redistribution, and it says so directly rather than by inference from
+    // two checkpoints 27 iterations apart.
+    std::cout << "      column sum of dT/dt = " << s_tot
+              << " K/iteration over " << im << " layers; mean per layer = "
+              << (im > 0 ? s_tot / im : 0.0) << " K/iteration" << std::endl;
+}
+
 using namespace AtomUtils;
 
 cUranusModel* cUranusModel::m_model = NULL;
@@ -385,6 +508,8 @@ void cUranusModel::Run(){
 
     for(iter_n = 1; iter_n <= nm; iter_n++){
 
+        tattribBegin();   // no-op unless ATURAN_TATTRIB is set
+
         auto begin = std::chrono::high_resolution_clock::now();
 
         cout << endl << endl;
@@ -401,6 +526,7 @@ void cUranusModel::Run(){
             if(press_solver_shared()) PressureSolver<cUranusModel>(*this).run();
             else                      PressureSolverUran(*this).run();
             AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
+            tattrib("pressure+damp");
 
             SaturationAdjustmentUran(*this).run("H2O",
                 coeff_h2o_A, coeff_h2o_B, coeff_h2o_A_i, coeff_h2o_B_i,
@@ -430,8 +556,11 @@ void cUranusModel::Run(){
                 C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, m_ch4,
                 ch4, ch4_cloud, ch4_ice);
 
+            tattrib("SaturationAdjust");
+
             // Must follow the saturation adjustments: it removes condensate in place.
             if(precip_enabled()) PrecipitationUran(*this).run();
+            tattrib("Precipitation");
 
             ChemistryUran(*this).DiffMassFluxUran();
 
@@ -448,14 +577,20 @@ void cUranusModel::Run(){
             AtomUtils::damp_wiggles(massflux_nh4sh, nullptr, true, true, true);
             AtomUtils::damp_wiggles(fluxlim_nh4sh,  nullptr, true, true, true);
 
+            tattrib("Chemistry");
+
             Forces();
+            tattrib("Forces");
             Latent_Heat();
+            tattrib("Latent_Heat");
 
         }  // if loop
 
         RungeKuttaUran();
+        tattrib("RungeKutta");
 
         AtomUtils::damp_wiggles(t, nullptr, true, true, true);
+        tattrib("damp_wiggles(t)");
         AtomUtils::damp_wiggles(u, nullptr, true, true, true);
         AtomUtils::damp_wiggles(v, nullptr, true, true, true);
         AtomUtils::damp_wiggles(w, nullptr, true, true, true);
@@ -463,6 +598,7 @@ void cUranusModel::Run(){
         BC_Uran(*this).bcRadius();                                      // extrapolation in i-direction along grid boundaries
         BC_Uran(*this).bcTheta();                                       // extrapolation in j-direction along grid boundaries
         BC_Uran(*this).bcPhi();                                         // extrapolation in k-direction along grid boundaries
+        tattrib("BoundaryConds");
 
         // How far the run is from a steady state, and WHERE. MUST run BEFORE restoreVar: it
         // differences each field against the n-copy restoreVar is about to overwrite, so after
@@ -477,6 +613,7 @@ void cUranusModel::Run(){
         if(steady_on && iter_n % checkpoint == 0) steadyQuery();
 
         restoreVar(1.0);
+        tattrib("restoreVar");
 
         // After the state has been advanced and the boundaries applied: put any
         // superadiabatic column back on the dry adiabat. Off by default (ATURAN_CONV_ADJ).
@@ -484,10 +621,14 @@ void cUranusModel::Run(){
         if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
 
+        tattrib("Rad/Turb/ConvAdj");
+
         panorama_cnt++;
 
         if(iter_n % checkpoint == 0){
             printMinMax();
+            printTemperatureBudget();        // no-op unless ATURAN_TBUDGET is set
+            printTemperatureAttribution();   // no-op unless ATURAN_TATTRIB is set
             writeData();
         }
 
@@ -574,6 +715,14 @@ void cUranusModel::resetArrays(){
     massflux_nh3.initArray(im, jm, km, 0.0);    // mass flux nh3
     massflux_nh4sh.initArray(im, jm, km, 0.0);  // mass flux nh4sh
     fluxlim_nh4sh.initArray(im, jm, km, 0.0);   // TVD flux-limiter correction
+
+    // Item 1's budget instrument. Allocated only when it is switched on, so the default build
+    // carries six empty vectors and the recording branch in RHSUran is a size check that fails.
+    if(tbudget_enabled()){
+        tbud_pres.assign(im, 0.0);  tbud_trans.assign(im, 0.0);
+        tbud_diff.assign(im, 0.0);  tbud_tmf.assign(im, 0.0);
+        tbud_rad.assign(im, 0.0);   tbud_tot.assign(im, 0.0);
+    }
 
     difflux_h2s.initArray(im, jm, km, 0.0);   // diffusive flux h2s
     difflux_nh3.initArray(im, jm, km, 0.0);   // diffusive flux nh3
