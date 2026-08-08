@@ -879,7 +879,9 @@ private:
     void init_v_or_w(Array &v_or_w, int j, double coeff_trop, double coeff_sl);
     void init_v_or_w_above_tropopause(Array &v_or_w, int j, double coeff);
 
-    void computePressure();
+    // computePressure() was declared here and defined in Pressure_Uran.cpp with no caller
+    // anywhere; both are gone. The pressure solve is PressureSolverUran, or the shared
+    // PressureSolver when ATURAN_PRESS_SOLVER=1. See the comment at the top of Pressure_Uran.cpp.
     void init_temperature();
     void init_PressureStatic();
     void init_PressureDynamic();
