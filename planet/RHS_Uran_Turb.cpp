@@ -190,13 +190,18 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     //
     // ATURAN_CORIOLIS_LEGACY=1 restores the two pre-port signs.
     //
-    // NOT FIXED HERE, and it is a separate defect in the same term: Coriolis_phi enters rhs_w
-    // WITHOUT the scale_Cor = L_atm/u_0 factor that rhs_u and rhs_v apply to the other two
-    // components, so the zonal component is 3600x weaker than its siblings. That belongs to the
-    // unit-system port (ATJUP af0446d, which carries one nd_cor on all three) and folding a 3600x
-    // magnitude change into a sign fix would make neither measurable.
+    // FIXED SEPARATELY, below: Coriolis_phi entered rhs_w WITHOUT the scale_Cor = L_atm/u_0 factor
+    // that rhs_u and rhs_v apply to the other two components. 8b284cb said that left it "3600x
+    // weaker"; THAT NUMBER WAS WRONG. L_atm is stored in KILOMETRES (360.0), so
+    // scale_Cor = 360/100 = 3.6, not 3600 — the arithmetic there treated L_atm as metres. The
+    // defect was real and three orders of magnitude smaller than claimed.
     static const bool cor_legacy = [](){
         const char* e = getenv("ATURAN_CORIOLIS_LEGACY"); return e && atoi(e) != 0; }();
+    // The zonal component never received scale_Cor, which rhs_u and rhs_v apply to the other two.
+    // Separate knob from the sign fix above: they are different defects in the same term, and
+    // 8b284cb deliberately kept them apart so each could be measured on its own.
+    static const bool cor_phi_legacy = [](){
+        const char* e = getenv("ATURAN_CORIOLIS_PHI_LEGACY"); return e && atoi(e) != 0; }();
     double Coriolis_rad  = -2.0 * omega * sinthe * w_ijk;
     double Coriolis_the  = (cor_legacy ? +2.0 : -2.0) * omega * costhe * w_ijk;
     double Coriolis_phi  = +2.0 * omega * ((cor_legacy ? -1.0 : +1.0) * costhe * v_ijk
@@ -652,7 +657,10 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - dphdphi_term
         - transport_w
         + diffusion_w / re_eff + diffusion_w * nue_t
-        - Coriolis    * Coriolis_phi;
+        // scale_Cor here too. rhs_u and rhs_v have always applied it to the other two components;
+        // this one did not, leaving the zonal Coriolis force short by L_atm/u_0 = 3.6 relative to
+        // its siblings. ATURAN_CORIOLIS_PHI_LEGACY=1 restores the unscaled form.
+        - Coriolis    * (cor_phi_legacy ? 1.0 : scale_Cor) * Coriolis_phi;
 
     rhs_ch4.x[i][j][k] =
         - transport_ch4
