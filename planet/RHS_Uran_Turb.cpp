@@ -526,8 +526,45 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     //
     // ATURAN_BUOY_REF=1 without the split subtracts buoy_ref_level from the buoyancy in place —
     // ATSAT's treatment — so the anomaly and the split can be attributed separately.
+    // ===== DEFAULT ON, AND THIS IS THE SECOND DEFAULT FLIP IN THIS MODEL =====
+    //
+    // It is the ONLY term that gives Uranus a thermal driver of meridional circulation. Measured
+    // with ATURAN_VBUDGET (4fad1e2), dphdthe_term runs +1.58e-2 at 79 N through zero at the equator
+    // to -6.6e-3 at 31 S — antisymmetric, equator-crossing, and at high latitudes larger than every
+    // other term in rhs_v by more than an order of magnitude. Without it rhs_v is forced by p_dyn
+    // alone, a projection variable that enforces continuity and carries no thermal signal, so the
+    // equator-to-pole temperature contrast never reaches the meridional momentum equation at all.
+    //
+    // RESULTS EITHER SIDE OF THIS COMMIT ARE NOT COMPARABLE, as they are not across 0619e15.
+    // ATURAN_HYDRO_SPLIT=0 restores the old default and was verified BIT-IDENTICAL against 4fad1e2
+    // before the flip landed, not after: 7 of 7 output files and not one differing log line.
+    //
+    // WHAT IT BUYS, at 224 iterations, single-threaded, radiation on:
+    //
+    //     quantity                            off        on
+    //     max |v| [m/s]                    0.2682    1.1654
+    //     peak |PSI| (vertically integrated) 6.5451   13.0921
+    //     PSI at 85 N                      0.0049    2.0578
+    //     PSI at 80 S                     -0.0358   -4.5595
+    //     sign reversals in PSI                 1         1
+    //
+    // The overturning DOUBLES and stops being a mid-latitude feature that dies by 80 degrees. Both
+    // configurations have one equatorial reversal — a single Hadley pair — so this strengthens and
+    // extends a circulation rather than creating one. None of it is visible at 8 or 16 iterations:
+    // the term leaves a large unopposed acceleration and the flow spends the early run spinning up.
+    //
+    // WHAT IT DOES NOT BUY, stated because this item was mis-ranked as item 1's fix for a day:
+    // NOTHING FOR THE PHOTOSPHERE. At 224 iterations OLR/in moves 20.381 -> 20.380 W/m2 and
+    // T(tau=1) 135.98 -> 135.98 K. README item 1 is untouched, and aa6f739 already located that
+    // fault in damp_wiggles rather than in any momentum term.
+    //
+    // NO SIBLING DEFAULTS THIS ON. ATJUP's gate falls back to ATJUP_NONDIM, also 0; ATNEPT's is 0;
+    // ATSAT has no such knob. ATURAN is deliberately the first, because it is the model measured to
+    // have no other meridional driver — Neptune's circulation is already an order of magnitude
+    // stronger on an internal flux ten times larger. If this proves right here it should be carried
+    // to ATNEPT, and that is a separate decision on separate measurements.
     static const int hydro_split = [](){
-        const char* e = getenv("ATURAN_HYDRO_SPLIT"); return e ? atoi(e) : 0; }();
+        const char* e = getenv("ATURAN_HYDRO_SPLIT"); return e ? atoi(e) : 1; }();
     static const int buoy_ref_on = [](){
         const char* e = getenv("ATURAN_BUOY_REF"); return e ? atoi(e) : 0; }();
 

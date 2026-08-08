@@ -162,7 +162,7 @@ and turbulence remain diagnostic-only here.
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
-| `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
+| `ATURAN_SINTHE_MIN` | 0.4 | polar floor on sin θ, and **the single place it is written** since `a31b473`: the integrator, the chemistry and this model's own pressure solver all read it instead of the three hardcoded 0.4 literals they used to carry |
 | `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own Gauss-Seidel (serial since the race fix); 1 = the shared red-black `PressureSolver<Planet>` |
 | `ATURAN_DAMP_T_VERT` | 1.0 | Strength of the **vertical** pass of the Shapiro filter on `t`; horizontal passes untouched. 1.0 is bit-identical to the unsplit call. 0.0 disables it. **This is the largest single term in item 1** — see the sweep there |
 | `ATURAN_TBUDGET` | 0 | Per-layer decomposition of `rhs_t` into its five terms, one column, RK stage 0. Measurement only. See item 1 |
@@ -178,7 +178,7 @@ and turbulence remain diagnostic-only here.
 |----------|---------|--------|
 | `ATURAN_BUOY_SCALE` | 1.0 | multiplier on the buoyancy in `rhs_u` |
 | `ATURAN_BUOY_REF` | 0 | ATSAT's device: subtract the area-weighted horizontal mean in place |
-| `ATURAN_HYDRO_SPLIT` | 0 | ATJUP's: carry the buoyancy in `p_hydro`, drop the radial term from `rhs_u`, let the horizontal gradient enter `rhs_v`/`rhs_w` |
+| `ATURAN_HYDRO_SPLIT` | **1** | ATJUP's: carry the buoyancy in `p_hydro`, drop the radial term from `rhs_u`, let the horizontal gradient enter `rhs_v`/`rhs_w`. **Default flipped on** — it is the only thermal driver of meridional circulation this model has; `=0` restores the old default bit-identically. See item 10 |
 | `ATURAN_HYDRO_REF` | 0 | integrate downward from the top instead of up from the deep boundary. Not the intended setting |
 | `ATURAN_HYDRO_ND_KM` | 0 | restore the dropped km→m factor in `p_hydro`'s nondimensionalisation, i.e. the pre-`9da831a` behaviour, for attribution only |
 
@@ -459,6 +459,38 @@ None of these stops a run; all of them affect what a result means.
    derivatives — the double-digit meridional winds were an artefact — and continuity converges 7×
    better. The zonal wind is prescribed and is untouched. **This is not a fix for item 1**: it moves
    OLR/in by 1.7 %, because that fault is vertical and this correction is horizontal.
+
+10. **`ATURAN_HYDRO_SPLIT` now defaults ON, and results either side of that commit are not
+    comparable.** It is the only term that gives Uranus a thermal driver of meridional circulation:
+    without it `rhs_v` is forced by `p_dyn` alone — a projection variable enforcing continuity,
+    carrying no thermal signal — so the equator-to-pole temperature contrast never reaches the
+    meridional momentum equation. Measured with `ATURAN_VBUDGET`, the split's `dphdthe_term` runs
+    +1.58e−2 at 79°N through zero at the equator to −6.6e−3 at 31°S, larger at high latitudes than
+    every other term in `rhs_v` by more than an order of magnitude.
+
+    At 224 iterations, single-threaded, radiation on:
+
+    | quantity | off | on |
+    |---|---|---|
+    | max \|v\| [m/s] | 0.2682 | **1.1654** |
+    | peak \|Ψ\| (vertically integrated) | 6.5451 | **13.0921** |
+    | Ψ at 85°N | 0.0049 | **2.0578** |
+    | Ψ at 80°S | −0.0358 | **−4.5595** |
+    | sign reversals in Ψ | 1 | 1 |
+
+    The overturning **doubles** and stops dying by 80°. Both configurations have one equatorial
+    reversal — a single Hadley pair — so this strengthens and extends a circulation rather than
+    creating one, and **none of it is visible before ~100 iterations**: the term leaves a large
+    unopposed acceleration and the flow spends the early run spinning up.
+
+    **It does nothing for item 1.** OLR/in 20.381 → 20.380 W/m², T(τ=1) 135.98 → 135.98 K. This was
+    mis-ranked as item 1's fix for a day; `aa6f739` had already located that fault in
+    `damp_wiggles`.
+
+    **No sibling defaults it on** — ATJUP falls back to `ATJUP_NONDIM` (also 0), ATNEPT is 0, ATSAT
+    has no such knob. ATURAN is deliberately first, being the model measured to have no other
+    meridional driver. `ATURAN_HYDRO_SPLIT=0` is the exact way back, verified bit-identical before
+    the flip.
 
 9. **The grey opacity is Jupiter's calibration, not Uranus's.** `C_cia` and `opac_cal` were tuned so
    that Jupiter's photosphere lands at 0.25–0.35 bar. Nothing has recalibrated them here, and the
