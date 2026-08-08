@@ -171,8 +171,43 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     double Coriolis_the  = +2.0 * omega * costhe * w_ijk;
     double Coriolis_phi  = +2.0 * omega * (-costhe * v_ijk + sinthe * u_ijk);
 
-    double centrifugal_rad = omega * omega * rm;
-    double centrifugal_the = omega * omega * rm * fabs(sinthe);
+    // ===== THE CENTRIFUGAL FORCE POINTS AWAY FROM THE ROTATION AXIS =====
+    //
+    // Ported from ATJUP 8649675, which ATURAN never received. Centrifugal acceleration is
+    // Omega^2 * s * s_hat with s = r*sin(theta) the distance from the ROTATION AXIS and
+    // s_hat = sin(theta)*e_r + cos(theta)*e_theta pointing away from it:
+    //
+    //     a_r     = +Omega^2 * r * sin^2(theta)
+    //     a_theta = +Omega^2 * r * sin(theta) * cos(theta)
+    //
+    // All three parts were wrong here, in the same three ways ATJUP records. The radial part
+    // carried NO sin^2, so it had full strength at the poles where it must vanish. The meridional
+    // part had |sin| where sin*cos belongs, which is neither the right magnitude nor
+    // equator-directed — and the absolute value destroyed the hemispheric antisymmetry, so both
+    // hemispheres were pushed the same way. And both entered rhs_* through a MINUS, pointing the
+    // force TOWARD the axis instead of away from it; they now enter through a plus, as ATJUP's do.
+    //
+    // The equator-directed meridional part only works because cos(theta) already changes sign at
+    // the equator here — ATJUP needed 53e75b2 first for that, and ATURAN's costhe_tbl is built as
+    // cos(the.z[j]) with no fabs, so that prerequisite was already satisfied.
+    //
+    // STILL WRONG, and deliberately left for step 3: `sinthe` is the CLAMPED metric value, floored
+    // at sinthe_min() = 0.4, so sin^2 reads 0.16 at the poles rather than 0. That is a metric guard
+    // leaking into a body force. ATJUP fixed it in 7782207 by deriving sinthe_true from costhe.
+    // Fixing it here would conflate two ports in one measurement.
+    //
+    // ATURAN_CENT_LEGACY=1 restores the pre-port form AND the pre-port entry sign together, since
+    // neither is meaningful without the other.
+    static const bool cent_legacy = [](){
+        const char* e = getenv("ATURAN_CENT_LEGACY"); return e && atoi(e) != 0; }();
+    double centrifugal_rad, centrifugal_the;
+    if(cent_legacy){
+        centrifugal_rad = omega * omega * rm;
+        centrifugal_the = omega * omega * rm * fabs(sinthe);
+    } else {
+        centrifugal_rad = omega * omega * rm * sinthe * sinthe;
+        centrifugal_the = omega * omega * rm * sinthe * costhe;
+    }
 
     double coeff_energy_p = u_0 * u_0 / (cp_mix * t_ref);
 
@@ -486,7 +521,8 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - transport_u
         + diffusion_u / re_eff + diffusion_u * nue_t
         - Coriolis    * scale_Cor * Coriolis_rad
-        - centrifugal * scale_cen * centrifugal_rad
+        // PLUS: the force points away from the axis. See the block where it is formed.
+        + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_rad
         - sponge * u_ijk;
 
     rhs_v.x[i][j][k] =
@@ -495,7 +531,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - transport_v
         + diffusion_v / re_eff + diffusion_v * nue_t
         - Coriolis    * scale_Cor * Coriolis_the
-        - centrifugal * scale_cen * centrifugal_the;
+        + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_the;
 
     rhs_w.x[i][j][k] =
         - dpdphi_term
