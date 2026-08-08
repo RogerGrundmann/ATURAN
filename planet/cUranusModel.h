@@ -397,15 +397,37 @@ public:
         return rm + (R_km / L_atm - 1.0);
     }
 
-    // The model's own floor on sin(theta) in the METRIC. ATURAN declares none, as ATSAT and
-    // ATNEPT do not; it exists so ATPhys::polar_divisor_floor<Planet>() compiles. With
-    // ATURAN_SINTHE_TRACK unset that function returns the literal 0.4 the hand-written limiter
-    // used, so this value is not reached by default.
+    // The model's own floor on sin(theta) in the METRIC, and the SINGLE PLACE IT IS WRITTEN.
+    //
+    // This used to return 0.0 and say ATURAN "declares none", existing only so
+    // ATPhys::polar_divisor_floor<Planet>() would compile. That was not true of the model: the
+    // integrator, the chemistry and this model's own pressure solver each clamped sin(theta) at a
+    // hand-written 0.4, in three separate literals —
+    //
+    //     RungeKutta_Uran_Turb.cpp   constexpr double sinthe_min = 0.4;
+    //     ChemistryUran.h            constexpr double sinthe_min = 0.4;
+    //     PressureSolverUran.h       if (sinthe_table[j] < 0.4) sinthe_table[j] = 0.4;
+    //
+    // so the declared floor and the applied floor disagreed. PressureSolver.h's contract for this
+    // hook is "the polar metric floor, SHARED WITH THE MOMENTUM EQUATIONS", and ATURAN's momentum
+    // equations use 0.4; returning 0.0 broke that contract rather than expressing a choice. All
+    // three literals now read this function, which is what makes it the single source of truth.
+    //
+    // THE DEFAULT PATH IS BIT-IDENTICAL: 0.4 was the applied value before and is the applied value
+    // now. What changes is ATURAN_PRESS_SOLVER=1, where the SHARED solver's clamp was a no-op
+    // against 0.0 and now floors at 0.4 like everything else in the model — the disagreement this
+    // removes. Measured before the change, that path differed from the default solver by 0.1 in u
+    // at mid-latitudes with the poles the quietest part of the domain, so nothing was blowing up;
+    // this is consistency, not a rescue.
+    //
+    // ATURAN_SINTHE_MIN still overrides, and now means the floor EVERYWHERE rather than in the
+    // shared solver alone. ATJUP is the model this follows: its hook returns 0.55 and its
+    // integrator reads the hook. ATSAT has no hand-written floor, so its 0.0 is already uniform.
     static double sinthe_min(){
         static const double v = [](){
             const char* e = getenv("ATURAN_SINTHE_MIN");
-            const double x = e ? atof(e) : 0.0;
-            return (x >= 0.0 && x < 1.0) ? x : 0.0;
+            const double x = e ? atof(e) : 0.4;
+            return (x >= 0.0 && x < 1.0) ? x : 0.4;
         }();
         return v;
     }

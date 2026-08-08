@@ -112,10 +112,10 @@ void cUranusModel::RungeKuttaUran(){
 
     // Precompute sin/cos tables — depend only on j.
     // sinthe is clamped to a minimum to prevent 1/sin²θ blow-up near the poles.
-    constexpr double sinthe_min = 0.4;
+    const double sinthe_floor = sinthe_min();   // the model's polar metric floor, cUranusModel.h
     std::vector<double> sinthe_tbl(jm), costhe_tbl(jm);
     for(int j = 0; j < jm; j++){
-        sinthe_tbl[j] = std::max(sinthe_min, std::abs(sin(the.z[j])));
+        sinthe_tbl[j] = std::max(sinthe_floor, std::abs(sin(the.z[j])));
         costhe_tbl[j] = cos(the.z[j]);
     }
 

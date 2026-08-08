@@ -127,7 +127,7 @@ public:
         // Pass 1: compute jT_* and j_* (ordinary + thermal diffusion fluxes).
         // All writes go to jT_* and j_* at [i][j][k]; reads are from
         // neighbouring cells of t, h2s, nh3, nh4sh — no write-write races.
-        constexpr double sinthe_min = 0.4;
+        const double sinthe_min = m.sinthe_min();   // the model's polar metric floor
 
         #pragma omp parallel for collapse(3) schedule(static)
         for(int k = 1; k < km-1; k++){

@@ -43,7 +43,8 @@ public:
         std::vector<double> sinthe_table(m.jm);
         for (int j = 0; j < m.jm; j++) {
             sinthe_table[j] = sin(m.the.z[j]);
-            if (sinthe_table[j] < 0.4) sinthe_table[j] = 0.4;
+            // Same floor the integrator and the shared solver use; see cUranusModel.h.
+            if (sinthe_table[j] < m.sinthe_min()) sinthe_table[j] = m.sinthe_min();
         }
 
         // Boundary conditions for aux — r-direction
