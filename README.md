@@ -244,14 +244,21 @@ correction, which is why the first fields to move were `u`, `v`, `w`, `t`. The e
 subset serialisation was weak evidence was right, and it was right for the reason given: the
 serialised-subset passes never isolated this loop.
 
-**What remains is a diagnostic, and it is NOT a race.** Above one thread the log's
-saturation-adjustment block — `i_sat`/`j_sat`/`k_sat`, `iter_prec_found`, and the `p_stat`, `T`,
-`saturation` and per-species `humid/cloud/ice` values printed with them — still varies run to run.
-That block is filled under `#pragma omp critical` in `SaturationAdjustmentUran.cpp` and records
-*the last cell that satisfied the condition*, so the winner depends on thread arrival order by
-construction. It is properly synchronised, it writes reporting variables only, and **every output
-file is bit-identical across it**: those are the only log lines that differ, checked line-kind by
-line-kind. Read `i_sat` as "an example cell", not "the cell", whenever threads > 1.
+**The log is byte-comparable at any thread count too.** The saturation-adjustment block —
+`i_sat`/`j_sat`/`k_sat`, `iter_prec_found`, and the `p_stat`, `T`, `saturation` and per-species
+`humid/cloud/ice` values printed with them — was for a while the only thing that still varied.
+It is filled under `#pragma omp critical` in `SaturationAdjustmentUran.cpp` and used to record
+whichever cell reached the section *last*, so the winner followed thread arrival order. That was
+never a race — the section is properly synchronised and writes reporting variables only, and every
+output file was bit-identical across it — but it made logs from different thread counts impossible
+to diff.
+
+The winner is now chosen by **position** instead: the loop nest is `k`, then `j`, then `i`, so
+serial traversal visits `key = (k·jm + j)·im + i` in increasing order and "the last cell found
+wins" is exactly "the largest key wins". Taking the maximum reproduces the single-threaded answer
+at any thread count. **Which cell is reported did not change** — at 1 thread the log is unchanged
+line for line; at 16 threads it now matches it, and two 16-thread runs match each other. This is a
+determinism fix, not a change of what the diagnostic means.
 
 `-fsanitize=thread` was run and is **not** what found this. GCC's `libgomp` is uninstrumented, so
 TSan sees no happens-before at an OpenMP fork or join and reports every value written before a
@@ -364,10 +371,10 @@ None of these stops a run; all of them affect what a result means.
 7. **The multi-thread race is fixed; one order-dependent diagnostic remains.** It was
    `PressureSolverUran.h`'s in-place Gauss-Seidel parallelised across its own stencil, and it is now
    serial — 1 thread and 16 threads agree bit-identically, and so do two 16-thread runs, at no cost
-   to any measurement in this file. See *Usage* for the table and the reasoning. What is left is
-   reporting only: the saturation-adjustment `i_sat`/`iter_prec_found` block records the *last* cell
-   found under `#pragma omp critical`, so above one thread it names a different cell run to run
-   while every output file stays bit-identical. Measurements here are still quoted at
+   to any measurement in this file. The saturation-adjustment `i_sat`/`iter_prec_found` block, which
+   was left picking its cell by thread arrival order, now picks by position and reproduces the
+   single-threaded report at any thread count, so **the log is byte-comparable as well as the output
+   files**. See *Usage* for both tables and the reasoning. Measurements here are still quoted at
    `OMP_NUM_THREADS=1`, now as a convention rather than a necessity.
 
 8. **The metric radius was corrected and made the default, and results before that commit are not

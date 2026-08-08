@@ -41,6 +41,9 @@ void SaturationAdjustmentUran::run_legacy(const std::string& gas,
     double t_u_sat  = 0.0, p_u_sat  = 0.0;
     double q_v_b_sat = 0.0, q_c_b_sat = 0.0, q_i_b_sat = 0.0;
     double saturation = 0.0;
+    // Which cell gets reported is decided by POSITION and not by thread arrival order; -1 is
+    // "no cell found yet", and every real key is >= 0. See the critical block below.
+    long long sat_key = -1;
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int k = 0; k < km; k++){
@@ -113,8 +116,28 @@ void SaturationAdjustmentUran::run_legacy(const std::string& gas,
                 m.t.x[i][j][k]      = T / m.t_ref;
 
                 if(cell_found){
+                    // ===== THE WINNER IS CHOSEN BY POSITION, NOT BY ARRIVAL ORDER =====
+                    //
+                    // This block used to assign unconditionally, so the cell reported was
+                    // whichever thread happened to enter the critical section LAST. That is not
+                    // a race — the section is properly synchronised and writes reporting
+                    // variables only, and every output file was bit-identical across it — but it
+                    // made the LOG non-comparable above one thread: two 16-thread runs of the
+                    // same binary named different cells, and those were the only log lines that
+                    // differed once the pressure-solver race was fixed.
+                    //
+                    // The loop nest is k, then j, then i, so serial traversal visits keys in
+                    // increasing order and "the last cell found wins" is exactly "the largest
+                    // key wins". Taking the maximum therefore reproduces the single-threaded
+                    // answer at ANY thread count, which is the whole point: this is a
+                    // determinism fix, not a change of which cell is meant. The key is built in
+                    // the nest's own order for that reason — (i,j,k) would pick a different cell
+                    // and change the reported answer.
+                    const long long key = ((long long)k * jm + j) * im + i;
                     #pragma omp critical
+                    if(key > sat_key)
                     {
+                        sat_key         = key;
                         sat_found       = true;
                         iter_prec_found = cell_iter;
                         i_sat = i; j_sat = j; k_sat = k;
