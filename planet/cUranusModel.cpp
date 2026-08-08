@@ -589,7 +589,26 @@ void cUranusModel::Run(){
         RungeKuttaUran();
         tattrib("RungeKutta");
 
-        AtomUtils::damp_wiggles(t, nullptr, true, true, true);
+        // ===== THE VERTICAL PASS OF THE t FILTER HAS ITS OWN STRENGTH =====
+        //
+        // aa6f739 measured this call supplying 98 % of the photosphere's warming with a column
+        // mean of -0.012 K: a Shapiro 1-2-1 filter for grid-scale noise acting as the model's
+        // dominant vertical heat transport. ATURAN_DAMP_T_VERT scales the VERTICAL pass only; the
+        // horizontal passes are untouched.
+        //
+        // DEFAULT 1.0, AND THAT IS BIT-IDENTICAL. damp_wiggles applies its axes in the order
+        // k, j, i, so splitting the single (true,true,true) call into horizontal-then-vertical
+        // preserves the order exactly. Verified rather than argued: 7 of 7 output files identical
+        // with the variable unset, and the sweep's own 1.0 row reproduces README item 8's
+        // corrected-metric numbers, OLR/in 29.58 and T(tau=1) 135.98.
+        //
+        // 0.0 disables the vertical pass entirely and is the diagnostic extreme, not a proposal.
+        // README item 1 carries the sweep and what it costs.
+        static const double damp_t_vert = [](){
+            const char* e = getenv("ATURAN_DAMP_T_VERT"); return e ? atof(e) : 1.0; }();
+        AtomUtils::damp_wiggles(t, nullptr, false, true, true);              // horizontal, unchanged
+        if(damp_t_vert != 0.0)
+            AtomUtils::damp_wiggles(t, nullptr, true, false, false, damp_t_vert);
         tattrib("damp_wiggles(t)");
         AtomUtils::damp_wiggles(u, nullptr, true, true, true);
         AtomUtils::damp_wiggles(v, nullptr, true, true, true);

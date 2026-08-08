@@ -164,6 +164,7 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
 | `ATURAN_SINTHE_MIN` | 0.0 | env floor on sin θ — **not the value in force**: the integrator uses a hardcoded `sinthe_min = 0.4`, so this accessor is not consulted by default |
 | `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own Gauss-Seidel (serial since the race fix); 1 = the shared red-black `PressureSolver<Planet>` |
+| `ATURAN_DAMP_T_VERT` | 1.0 | Strength of the **vertical** pass of the Shapiro filter on `t`; horizontal passes untouched. 1.0 is bit-identical to the unsplit call. 0.0 disables it. **This is the largest single term in item 1** — see the sweep there |
 | `ATURAN_TBUDGET` | 0 | Per-layer decomposition of `rhs_t` into its five terms, one column, RK stage 0. Measurement only. See item 1 |
 | `ATURAN_TATTRIB` | 0 | Per-stage attribution of the column's actual kelvin — which routine moved `t`, not which term. Measurement only. **This is the one that answers item 1** |
 | `ATURAN_TBUDGET_J` / `_K` | 90 / 180 | Column both instruments report, defaulting to the equator at mid-longitude |
@@ -332,8 +333,36 @@ None of these stops a run; all of them affect what a result means.
    +14.3 at the top — the signature of a pure redistributor, which is exactly what this item
    describes. It is a Shapiro 1-2-1 filter run at `strength = 1.0` every iteration with the vertical
    axis enabled, `damp_wiggles(t, nullptr, true, true, true)`: a filter for grid-scale noise acting
-   as the dominant vertical heat transport. The first test is `along_i = false` for `t`, or a lower
-   strength, keeping the horizontal de-wiggling.
+   as the dominant vertical heat transport.
+
+   **`ATURAN_DAMP_T_VERT` scales that vertical pass, and the sweep accounts for ~85 % of the
+   excess.** 224 iterations, radiation on, single-threaded, horizontal passes untouched:
+
+   | vertical strength | OLR/in | T(τ=1) | τ=1 [bar] | T deep (i=0) | mean \|2nd diff\| | max \|2nd diff\| |
+   |---|---|---|---|---|---|---|
+   | **1.0 (default)** | **29.58** | **135.98** | 0.1740 | 346.35 | 0.403 | 0.720 |
+   | 0.5 | 15.22 | 114.82 | 0.1740 | 367.20 | 0.486 | 1.110 |
+   | 0.25 | 9.03 | 100.30 | 0.1733 | 382.13 | 0.568 | 1.540 |
+   | 0.1 | 5.24 | 86.86 | 0.1706 | 395.39 | 0.751 | 2.640 |
+   | 0.0 | 2.46 | 70.71 | 0.1652 | 411.91 | 1.252 | 5.660 |
+
+   Monotonic in every column, no NaN, and **no monotonic breaks in the profile at any strength** —
+   nothing oscillates. The 1.0 row reproduces item 8's corrected-metric numbers exactly, which is
+   what says the sweep is measuring this model and not a different one.
+
+   Three things this does **not** say. It does **not** close item 1: at strength 0 the photosphere
+   is still 11.7 K too warm and emits 2.46× the budget, so the filter is the large term and not the
+   only one. It does **not** relocate the photosphere — τ=1 barely moves, 0.1740 → 0.1652 bar; what
+   changes is the temperature there. And it is **not free**: mean roughness rises 3.1× and peak
+   roughness 7.9× across the sweep, so this is a trade between drift and numerical smoothness with
+   no free point on the curve.
+
+   What it does say without qualification is that **1.0 is the wrong default** — at that value a
+   grid-scale noise filter dominates the model's vertical heat transport. Choosing the right value
+   is a judgement about how much smoothing the scheme needs, which the measurement does not settle;
+   0.1–0.25 removes most of the drift at under 2× mean roughness. **Changing the default would
+   invalidate every result either side of it**, as the metric radius did in `0619e15`, and needs the
+   same treatment: an exact way back, verified before the flip and not after.
 
    **Ranking terms inside `rhs_t` cannot decide this item.** `ATURAN_TBUDGET` decomposes `rhs_t` and
    finds the `thermalmassflux` sink carrying 92–111 % of it and diffusion never above 0.2 % — but
