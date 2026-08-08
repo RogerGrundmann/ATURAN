@@ -220,22 +220,50 @@ OMP_NUM_THREADS=12 ./cli/uran . config_aturan.xml > run.log 2>&1
 Runs in this repository's measurements are single-threaded (`OMP_NUM_THREADS=1`) so that results
 are bit-reproducible and byte-comparisons between builds mean something.
 
-**That convention is load-bearing, not tidiness: THIS MODEL IS NOT REPRODUCIBLE ABOVE ONE THREAD.**
-Two runs of the same binary, same config, both at `OMP_NUM_THREADS=16`, differ — 8 of 13 output
-files identical. Same-config run-to-run divergence at a fixed thread count is a race, not rounding.
-Measured further:
+**The race was found and fixed. The model's STATE is now reproducible at any thread count.** The
+site was `PressureSolverUran.h`'s Poisson loop — Gauss-Seidel written in place, with
+`#pragma omp parallel for collapse(2) schedule(dynamic, 4)` over the very two indices its stencil
+reads across, so cell `(i,j,k)` was read by the thread owning `(i+1,j)` or `(i,j+1)` while its
+owner was writing it. It is now serial; see the comment in that file. Measured at nm=4:
 
-- 1 thread vs 16 threads: 0 of 13 files match; after 4 iterations 28 of 64 field arrays in the
-  zonal slice differ, starting from `u`, `v`, `w`, `t` at **iteration 2** — iteration 1 is clean.
+| configuration | 16t run A vs B | 1t vs 16t |
+|---|---|---|
+| before, `ATURAN_PRESS_SOLVER=0` (default) | differ | differ, 7 of 7 files |
+| after, `ATURAN_PRESS_SOLVER=0` (default) | **bit-identical** | **bit-identical** |
+| `ATURAN_PRESS_SOLVER=1` (shared red-black) | **bit-identical** | **bit-identical** |
+
+**Nothing was taken back to get this.** One thread ran `collapse(2)` in lexicographic order
+already, so the serial loop reproduces the previous 1-thread answer **bit-identically, with not one
+differing log line** — every single-threaded measurement in this file still stands. It costs ~0.5 %
+of a step: `computePressure` was 0.003 s of a 5.3 s step at 16 threads and is 0.03 s serial.
+
+Two clues that had been recorded, and what they turned out to mean. The whole physics block is
+gated on `if(iter_n % 2 == 0)`, which is why *iteration 1 was clean and divergence started at
+iteration 2* — the pressure solve does not run on odd iterations. And `p_dyn` feeds the velocity
+correction, which is why the first fields to move were `u`, `v`, `w`, `t`. The earlier note that
+subset serialisation was weak evidence was right, and it was right for the reason given: the
+serialised-subset passes never isolated this loop.
+
+**What remains is a diagnostic, and it is NOT a race.** Above one thread the log's
+saturation-adjustment block — `i_sat`/`j_sat`/`k_sat`, `iter_prec_found`, and the `p_stat`, `T`,
+`saturation` and per-species `humid/cloud/ice` values printed with them — still varies run to run.
+That block is filled under `#pragma omp critical` in `SaturationAdjustmentUran.cpp` and records
+*the last cell that satisfied the condition*, so the winner depends on thread arrival order by
+construction. It is properly synchronised, it writes reporting variables only, and **every output
+file is bit-identical across it**: those are the only log lines that differ, checked line-kind by
+line-kind. Read `i_sat` as "an example cell", not "the cell", whenever threads > 1.
+
+`-fsanitize=thread` was run and is **not** what found this. GCC's `libgomp` is uninstrumented, so
+TSan sees no happens-before at an OpenMP fork or join and reports every value written before a
+region and read inside it: 30 reports, all of that shape, all artifacts. It is also too slow to be
+practical at this grid — still inside `init_velocities` after 10 minutes against 45 s uninstrumented
+for the whole 4-iteration run. On this toolchain the byte-comparison above is the sharper
+instrument; TSan would need clang plus an annotated OpenMP runtime (Archer) to be worth rerunning.
+
 - With every `#pragma omp` disabled: 13 of 13 identical run-to-run **and** identical to the
-  1-thread reference. So the cause is OpenMP, not uninitialised memory.
-- The site is NOT identified. Serialising files one group at a time makes every subset
-  reproducible — the integrator alone, the physics group, the init routines, `BoundaryConditions.h`
-  alone — while the full build still diverges. A subset test reduces the parallel work and so can
-  hide a race by changing timing; those passes are weak evidence and should not be read as
-  clearing those files. **`-fsanitize=thread` is the tool for this, and has not been run yet.**
+  1-thread reference. So the cause was OpenMP, not uninitialised memory.
 - `RungeKutta_Uran_Turb.cpp` states its acceptance test as "reproducibility at any thread count".
-  The RK stages pass it in isolation; the program does not.
+  The RK stages passed it in isolation; the program now passes it too.
 
 Threading is also a poor trade here. Per time step, 1/2/4/8/16 threads give 8.562/5.876/4.467/
 4.320/4.220 s — saturating at **2×**, implying ~46 % of a step is serial. Running N jobs
@@ -333,9 +361,14 @@ None of these stops a run; all of them affect what a result means.
    nothing reads them back: `S_precip_*` reaches no RHS and `ATURAN_TURB_COUPLING` defaults to 0.
    Switching either on changes plots, not physics. Radiation is no longer in this list — see item 3.
 
-7. **The model is not reproducible above one thread.** A race, unlocated; see *Usage*. Every
-   measurement quoted in this file was taken at `OMP_NUM_THREADS=1`, which is the only setting under
-   which the byte-comparisons those measurements rest on are meaningful.
+7. **The multi-thread race is fixed; one order-dependent diagnostic remains.** It was
+   `PressureSolverUran.h`'s in-place Gauss-Seidel parallelised across its own stencil, and it is now
+   serial — 1 thread and 16 threads agree bit-identically, and so do two 16-thread runs, at no cost
+   to any measurement in this file. See *Usage* for the table and the reasoning. What is left is
+   reporting only: the saturation-adjustment `i_sat`/`iter_prec_found` block records the *last* cell
+   found under `#pragma omp critical`, so above one thread it names a different cell run to run
+   while every output file stays bit-identical. Measurements here are still quoted at
+   `OMP_NUM_THREADS=1`, now as a convention rather than a necessity.
 
 8. **The metric radius was corrected and made the default, and results before that commit are not
    comparable with results after it.** `rad.z` runs 1..2, so an unshifted metric put Uranus's

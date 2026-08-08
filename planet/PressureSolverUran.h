@@ -69,7 +69,40 @@ public:
         const double inv_dphi2 = 1.0 / (m.dphi * m.dphi);
 
         // Main Poisson solve — inline geometry per (i,j), rhs subtracted in divergence
-        #pragma omp parallel for collapse(2) schedule(dynamic, 4)
+        //
+        // ===== THIS LOOP IS SERIAL, AND THAT IS THE FIX FOR THE THREADING DEFECT =====
+        //
+        // It is Gauss-Seidel IN PLACE: p_dyn[i][j][k] is written from p_dyn[i±1][j][k] and
+        // p_dyn[i][j±1][k]. Those neighbours differ from (i,j) in exactly the two indices the
+        // pragma that used to sit here handed to different threads:
+        //
+        //     #pragma omp parallel for collapse(2) schedule(dynamic, 4)
+        //
+        // so cell (i,j,k) was read by the thread owning (i+1,j) or (i,j+1) while its owner was
+        // writing it. schedule(dynamic) made it worse than a thread-count dependence: which
+        // thread got which chunk varied with timing, so the SAME binary at the SAME thread count
+        // gave different answers run to run.
+        //
+        // This is the defect PressureSolver.h records fixing in the SHARED solver, in the same
+        // words — "writing p_dyn in place while reading p_dyn[i±1][j±1]" — cured there by
+        // red-black colouring. This solver is the DEFAULT (ATURAN_PRESS_SOLVER=0) and never got
+        // it, so the fix landed in the path almost nothing runs.
+        //
+        // MEASURED, nm=4, single run of this build. With the pragma: two 16-thread runs differ,
+        // and 1 vs 16 threads differ in 7 of 7 output files. Serial: 1 thread and 16 threads
+        // agree BIT-IDENTICALLY, two 16-thread runs agree bit-identically, and all of them agree
+        // bit-identically with the 1-thread answer this loop gave BEFORE the change — one thread
+        // ran collapse(2) in lexicographic order already, so serialising takes nothing back.
+        // EVERY single-threaded measurement in README.md still stands unchanged.
+        //
+        // Serial rather than red-black because it costs almost nothing: computePressure is 0.003 s
+        // of a 5.3 s step at 16 threads and 0.03 s when serial, ~0.5 % of a step. Red-black would
+        // change the answer and strand those measurements to recover 30 milliseconds.
+        // ATURAN_PRESS_SOLVER=1 still selects the shared red-black solver for anyone who wants
+        // this loop parallel.
+        //
+        // The four boundary loops in this file KEEP their pragmas: each writes one i-, j- or
+        // k-plane and reads only planes it does not write, so none of them has this problem.
         for (int i = 1; i < m.im-1; i++) {
             for (int j = 1; j < m.jm-1; j++) {
                 const double rm             = m.rad.z[i];
