@@ -304,17 +304,25 @@ None of these stops a run; all of them affect what a result means.
 
 1. **The photosphere is 77 K too warm, and it is NOT a heating excess — it is unopposed vertical
    redistribution.** Run to 224 iterations with the radiation diagnostic on, the τ=1 photosphere
-   settles at **136.45 K against a T_eff(in) of 59.04 K**, emitting **30× the planet's energy
+   settles at **135.98 K against a T_eff(in) of 59.04 K**, emitting **29.6× the planet's energy
    budget** and still climbing at +0.15 K/iteration. But the column does not gain heat:
 
    | checkpoint | T(i=0) deep | T(i=20) mid | T(i=40) top | column mean |
    |---|---|---|---|---|
-   | 1 | 405.11 | 253.58 | 77.15 | 245.99 |
-   | 28 | 346.63 | 246.31 | 139.07 | 243.87 |
+   | 1 | 405.12 | 253.59 | 77.16 | 245.99 |
+   | 28 | 346.35 | 245.90 | 139.03 | 243.58 |
 
-   The deep loses 58.5 K, the top gains 61.9 K, and the **mean moves −0.9 %**. Until this is fixed,
+   The deep loses 58.77 K, the top gains 61.87 K, and the **mean moves −0.98 %**. Until this is fixed,
    **the opacity constants cannot be judged against this model at all**: a photosphere 77 K too warm
    says nothing about kappa. This remains the highest-value open item.
+
+   **These numbers were re-measured on the current metric.** The item previously read 136.45 K and
+   30×, from runs predating `0619e15` — the same stale set item 3 carried, and of the kind item 8
+   says is not comparable across that commit. The fault is unchanged in kind and barely changed in
+   size: still 77 K too warm, still a redistribution with the column mean falling ~1 %. The
+   +0.15 K/iteration drift was re-checked and is unchanged, and checkpoint 1 moved only in the last
+   printed digit — the metric correction acts on a column that has had 8 iterations to respond, and
+   separates the two rows further by checkpoint 28.
 
    **The flattener is `damp_wiggles`, and it is not any term in the temperature equation.** This
    item used to say "thermal diffusion flattens the initial adiabat". The mechanism is right and the
@@ -378,7 +386,7 @@ None of these stops a run; all of them affect what a result means.
    What has been ruled out by measurement, so it is not re-derived:
    - **Latent heat is not the source.** `Q_Latent`/`Q_Sensible` reach no RHS, and the path that does
      reach `t` — the saturation adjustment — runs as a *sink* here, with ice sublimating throughout
-     (ch4_ice 111 → 87, h2o_ice 59 → 53), consistent with the −0.9 % drift.
+     (ch4_ice 111 → 85, h2o_ice 59 → 53), consistent with the −0.98 % drift.
    - **The buoyancy anomaly and the hydrostatic split do not fix it.** With the km→m factor restored
      *and* the metric radius wired — the configuration both were built to reach — `ATURAN_HYDRO_SPLIT`
      moves OLR/in by 0.34 % alone and 0.007 % on top of the metric. A term that redistributes
