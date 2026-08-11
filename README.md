@@ -393,28 +393,55 @@ None of these stops a run; all of them affect what a result means.
    resisting the flattening in item 1. Correcting it unmasked the drift rather than causing it.
 
 3. **`ATURAN_RAD_COUPLING` moves the photosphere the right way and cannot move it far enough.** The
-   term is the anchor item 1 is missing, and the sub-cap sweep at nm=224 is monotonic:
+   term is the anchor item 1 is missing, and the sweep at nm=224 is monotonic up to 3e4. The last
+   two columns come from an instrumented build that records the raw tendency *before* the limiter,
+   over the same 224 iterations as the rest of the row:
 
-   | coupling | T(τ=1) | OLR/in | T(i=40) top |
-   |---|---|---|---|
-   | 0 (off) | 136.45 | 30.093 | 139.07 |
-   | 1.0 | 136.45 | 30.093 | 139.07 |
-   | 1e3 | 136.41 | 30.064 | 139.04 |
-   | 1e4 | 136.06 | 29.806 | 138.77 |
-   | 3e4 | 135.69 | 29.536 | 138.47 |
-   | 1e5 | 136.33 | 30.177 | 139.24 |
+   | coupling | T(τ=1) | OLR/in | T(i=40) top | raw \|tendency\| max | cells capped |
+   |---|---|---|---|---|---|
+   | 0 (off) | 135.98 | 29.579 | 139.03 | — | — |
+   | 1.0 | 135.98 | 29.579 | 139.03 | 4.39e−5 | 0 % |
+   | 1e3 | 135.94 | 29.549 | 139.00 | 0.0438 | 0 % |
+   | 1e4 | 135.58 | 29.290 | 138.73 | 0.428 | 0 % |
+   | 3e4 | 135.20 | 29.013 | 138.43 | 1.252 | **1.1 %** |
+   | 1e5 | 135.81 | 29.615 | 139.20 | 4.200 | **4.7 %** |
 
    **At 1.0 — the physically correct value — the term is live but invisible**: it changes all 92
-   output files, and the largest temperature change anywhere is 1.0e-4 K, the output format's own
-   resolution. That was predicted before the run from `Q_rad ~ 1e-4 W/m³` and matches, which is what
-   certifies the scaling; a *visible* result at 1.0 would have meant a units error. ATSAT's note puts
-   the same point at ~1e9 iterations to equilibrate.
+   output files, and moves no printed value at all — T(τ=1), OLR/in and every column temperature are
+   identical to the `off` row. That was predicted before the run from `Q_rad ~ 1e-4 W/m³` and
+   matches, which is what certifies the scaling; a *visible* result at 1.0 would have meant a units
+   error. ATSAT's note puts the same point at ~1e9 iterations to equilibrate.
 
-   **The 1e5 row is the limiter, not the term.** Its raw tendency is ~1.1 against ATJUP's
-   `rad_t_max = 0.5`, so it redistributes by where the cap bites — which is why it breaks the trend
-   and warms the top instead of cooling it. Read the sub-cap rows only. Extrapolating those, closing
-   the 80 K gap needs a coupling of order 1e6, which is deep in the capped regime: **the term is
-   directionally right and cannot reach the answer within the cap at this run length.**
+   **This table replaces one measured on the uncorrected metric, and two claims made from it were
+   wrong.** The previous version read 136.45 / 136.41 / 136.06 / 135.69 / 136.33 for T(τ=1) and
+   30.093 / 30.064 / 29.806 / 29.536 / 30.177 for OLR/in. Its `off` row of **30.093 is exactly item
+   8's `rad.z` figure** — the sweep predates `0619e15`, which made the corrected metric the default,
+   and item 8 says in terms that results either side of that commit are not comparable. The shape
+   survived the correction unchanged; every value sits ~0.47 K and ~0.5 lower.
+
+   The two claims that did not survive:
+
+   - **"Its raw tendency is ~1.1" was an estimate and is off by ~4×.** Measured, the 1e5 row's raw
+     tendency is **4.200** against `rad_t_max = 0.5`. The figure 1.1 is close to the *3e4* row's
+     measured 1.252, so it appears to have been formed against the wrong row.
+   - **3e4 is not a sub-cap row.** It caps 1.1 % of cells, so "read the sub-cap rows only" cannot
+     include it. The genuinely clean rows are 1.0, 1e3 and 1e4.
+
+   **The 1e5 row is still the limiter, not the term**, and that now rests on a measurement rather
+   than an estimate: at 4.7 % of cells capped it redistributes by where the cap bites, which is why
+   it breaks the trend and warms the top instead of cooling it.
+
+   **The clean rows say the term cannot reach the answer.** Across 0 → 1e3 → 1e4 — four orders of
+   magnitude of coupling — T(τ=1) falls **135.98 → 135.58 K, about 0.4 K**, against the ~77 K it
+   would have to fall to meet T_eff(in) = 59.04 K, and the response saturates rather than
+   accumulating. The previous version extrapolated "a coupling of order 1e6"; that figure came from
+   the stale table and is not re-derived here, but it was already deep in the capped regime and a
+   saturating response only makes it worse. **The term is directionally right and cannot reach the
+   answer within the cap at this run length.**
+
+   **Neptune caps about a decade lower.** The same instrument on ATNEPT gives raw tendencies 11–12×
+   these, coupling for coupling, so that model is already 3.2 % capped at 1e4 where this one is
+   clean. See ATNEPT's item 8; the two files describe different planets, not a disagreement.
 
 4. **`ATURAN_THERMAL_MASSFLUX` is a measurement instrument, not a fix.** Setting it to 0 removes the
    sink entirely and the model drifts harder (34× at 224 iterations), so the term is load-bearing
