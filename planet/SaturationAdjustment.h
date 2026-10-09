@@ -79,10 +79,11 @@
  *     (a planet whose ice pair is its liquid pair) it moves the mass and no heat.
  * The entry negatives and the final clamp are left as they are; the instrument sizes them.
  * The default of CONSERVE is the MODEL's since 2026-10-09, Planet::satadj_default_conserve():
- * true on ATJUP (measured there, flipped on the user's word), false on ATSAT, ATNEPT and ATURAN,
- * where it has not been run -- and on ATSAT the ice pair is the liquid pair, so the repair would
- * move mass and no heat. <TAG>_SATADJ_CONSERVE=0 / 1 overrides either way. With CONSERVE off and
- * DIAG unset every written field is byte-identical to the routine before them.
+ * all four models return true. Measured without it, 16 iterations with the routine selected,
+ * g/m2 deleted (share of that gas's column): ATSAT H2O 646 900 (2.2 %), ATNEPT CH4 1 612 000
+ * (1.6 %), ATURAN H2O 242 700 (1.5 %); ATJUP 1 926 in 224 iterations (0.10 %). With it every
+ * delete bucket is zero on all four. <TAG>_SATADJ_CONSERVE=0 / 1 overrides either way. With
+ * CONSERVE off and DIAG unset every written field is byte-identical to the routine before them.
  *
  * ===== <TAG>_SATADJ_NEWTON (2026-10-09), DEFAULT Planet::satadj_default_newton() =====
  *
@@ -103,10 +104,11 @@
  * fixed point is the same; only the path to it changes. It costs two more saturation-pressure
  * evaluations per pass.
  *
- * The default is the MODEL's: ATJUP returns true (measured there, flipped on the user's word),
- * ATSAT, ATNEPT and ATURAN return false, where it has not been run. <TAG>_SATADJ_NEWTON=0 / 1
- * overrides either way. With the step off every written field is byte-identical to the routine
- * before it.
+ * The default is the MODEL's, Planet::satadj_default_newton(), so that it can differ per planet;
+ * since 2026-10-09 all four return true (ATJUP after 224 iterations, the other three after 16
+ * with the routine selected by <TAG>_SATADJ=1: 17 % to 52 % of the adjusted cell-calls had not
+ * converged there, none does with the step). <TAG>_SATADJ_NEWTON=0 / 1 overrides either way.
+ * With the step off every written field is byte-identical to the routine before it.
  */
 
 #pragma once
