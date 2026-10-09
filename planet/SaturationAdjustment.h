@@ -21,6 +21,7 @@
  *                                    it is what let Turbulence and PressureSolver be shared.
  *
  *   Planet::satadj_default_newton()  the default of <TAG>_SATADJ_NEWTON, see the note below
+ *   Planet::satadj_default_conserve() the default of <TAG>_SATADJ_CONSERVE, likewise
  *   Planet::satadj_updates_pstat()   whether the hydrostatic pressure is rewritten from the
  *                                    adjusted temperature at the end of each cell. ATSAT does,
  *                                    ATJUP does not. This is a real modelling disagreement about
@@ -44,7 +45,7 @@
  * NH3 and CH4 ices is a physics decision rather than a port. That substitution lives at ATSAT's
  * call site, not here, so supplying real values later changes one place.
  *
- * ===== <TAG>_SATADJ_DIAG AND <TAG>_SATADJ_CONSERVE (2026-10-08), BOTH DEFAULT 0 = OFF =====
+ * ===== <TAG>_SATADJ_DIAG (DEFAULT 0) AND <TAG>_SATADJ_CONSERVE (DEFAULT THE MODEL'S), 2026-10-08 =====
  *
  * Mirrored from ATOM_Precipitation's ATM_SATADJ_DIAG / ATM_SATADJ_PHASE, where the same routine
  * was charged +5.5e5 mm/a of column water by an independent budget and ONE clip turned out to be
@@ -77,7 +78,11 @@
  *     fluid cell, the skipped subsaturated ones too) and inside the iteration. With ls <= lv
  *     (a planet whose ice pair is its liquid pair) it moves the mass and no heat.
  * The entry negatives and the final clamp are left as they are; the instrument sizes them.
- * With both knobs unset every written field is byte-identical to the routine before them.
+ * The default of CONSERVE is the MODEL's since 2026-10-09, Planet::satadj_default_conserve():
+ * true on ATJUP (measured there, flipped on the user's word), false on ATSAT, ATNEPT and ATURAN,
+ * where it has not been run -- and on ATSAT the ice pair is the liquid pair, so the repair would
+ * move mass and no heat. <TAG>_SATADJ_CONSERVE=0 / 1 overrides either way. With CONSERVE off and
+ * DIAG unset every written field is byte-identical to the routine before them.
  *
  * ===== <TAG>_SATADJ_NEWTON (2026-10-09), DEFAULT Planet::satadj_default_newton() =====
  *
@@ -167,7 +172,8 @@ void SaturationAdjustment<Planet>::run(
     static const bool diag = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DIAG"); return e && atoi(e) != 0; }();
     static const bool conserve = [](){
-        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_CONSERVE"); return e && atoi(e) != 0; }();
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_CONSERVE");
+        return e ? atoi(e) != 0 : Planet::satadj_default_conserve(); }();
     static const bool newton = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_NEWTON");
         return e ? atoi(e) != 0 : Planet::satadj_default_newton(); }();
