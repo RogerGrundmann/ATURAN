@@ -252,6 +252,14 @@ public:
     static int bc_default_radius_copy(){ return 0; }
 
     std::vector<Array*> bc_fields_radius();
+    // The two species floors (ATURAN_BC_RADIUS_POSITIVE, ATURAN_SPECIES_CLAMP, both default 1), defined
+    // in BC_Uran.h beside the note that explains them.
+    std::vector<Array*> species_fields();
+    void floorRadialSpecies();
+    void clampNegativeSpecies();
+    void clampNegativeReport();
+    std::vector<double> clamp_added;
+    std::vector<long>   clamp_cells;
     std::vector<Array*> bc_fields_theta_extrap();
     std::vector<Array*> bc_fields_theta_zero();
     std::vector<Array*> bc_fields_phi();

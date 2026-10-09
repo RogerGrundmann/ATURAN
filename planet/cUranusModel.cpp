@@ -663,6 +663,7 @@ void cUranusModel::Run(){
         BC_Uran(*this).bcRadius();                                      // extrapolation in i-direction along grid boundaries
         BC_Uran(*this).bcTheta();                                       // extrapolation in j-direction along grid boundaries
         BC_Uran(*this).bcPhi();                                         // extrapolation in k-direction along grid boundaries
+        clampNegativeSpecies();                                         // ATURAN_SPECIES_CLAMP, default on (BC_Uran.h)
         tattrib("BoundaryConds");
 
         // How far the run is from a steady state, and WHERE. MUST run BEFORE restoreVar: it
@@ -705,6 +706,8 @@ void cUranusModel::Run(){
         printf(" time measured: %.3f seconds for one time step\n", elapsed.count() * 1e-9);
 
     }  // end for iter_n
+
+    clampNegativeReport();
 
     cout << endl << "      Uranus: run_3D_loop atm ended ..........................." << endl;
 

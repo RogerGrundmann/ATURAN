@@ -61,7 +61,86 @@ using namespace AtomUtils;
  * BC_Uran stays as the name so no call site changes, and because initTropopauseLayers below is
  * ATURAN's own and has no counterpart in the shared header.
  */
-inline void BC_Uran::bcRadius() { BoundaryConditions<cUranusModel>(m).bcRadius(); }
+// ---------------------------------------------------------------------------
+// The two species floors of ATJUP, ported 2026-10-09. BOTH DEFAULT 1 (the user's word, same
+// day); 0 restores each. Until then this model had neither: MEASURED at the defaults, 16 iterations (ATJUP/satchk/
+// giants/URANa), several species are negative, most of them on the model-top plane -- which is
+// the 2-point radial form f[s] = (4/3)f[a] - (1/3)f[b] going below zero wherever f[a] < f[b]/4 --
+// and some in the interior, which is the transport.
+//
+//   ATURAN_BC_RADIUS_POSITIVE   1 = floor the radial boundary planes of the species at zero where
+//                              they are written; 2 = fall back to the plain copy f[s] = f[a] there
+//                              (still a zero-gradient wall, first order in those cells)
+//   ATURAN_SPECIES_CLAMP        1 = set every negative species value to zero once per iteration,
+//                              after the boundary conditions and before restoreVar, and report
+//                              what that added per field at the end of the run
+//
+// 16 iterations, 3 threads (ATJUP/satchk/giants/URAN e, f, g): the boundary floor alone removes
+// every top-plane negative and leaves the interior ones; with both no species is negative at
+// any print. Against neither, the printed extrema that move do so in the sixth digit. NOT
+// measured: anything longer than 16 iterations.
+// ---------------------------------------------------------------------------
+inline std::vector<Array*> cUranusModel::species_fields(){
+    return { &h2o, &h2o_cloud, &h2o_ice,
+             &h2s, &h2s_cloud, &h2s_ice,
+             &nh3, &nh3_cloud, &nh3_ice,
+             &ch4, &ch4_cloud, &ch4_ice,
+             &nh4sh };
+}
+
+inline void cUranusModel::floorRadialSpecies(){
+    static const int positive = [](){ const char* e = getenv("ATURAN_BC_RADIUS_POSITIVE"); return e ? atoi(e) : 1; }();
+    if(positive == 0) return;
+    std::vector<Array*> sp = species_fields();
+    const int ns = (int)sp.size();
+    #pragma omp parallel for
+    for(int j = 0; j < jm; j++){
+        for(int k = 0; k < km; k++){
+            for(int f = 0; f < ns; f++){
+                Array& F = *sp[f];
+                if(F.x[0][j][k] < 0.0)
+                    F.x[0][j][k]    = (positive == 2) ? std::max(0.0, F.x[1][j][k])    : 0.0;
+                if(F.x[im-1][j][k] < 0.0)
+                    F.x[im-1][j][k] = (positive == 2) ? std::max(0.0, F.x[im-2][j][k]) : 0.0;
+            }
+        }
+    }
+}
+
+inline void cUranusModel::clampNegativeSpecies(){
+    static const int on = [](){ const char* e = getenv("ATURAN_SPECIES_CLAMP"); return e ? atoi(e) : 1; }();
+    if(on == 0) return;
+    std::vector<Array*> sp = species_fields();
+    if(clamp_added.size() != sp.size()){ clamp_added.assign(sp.size(), 0.0); clamp_cells.assign(sp.size(), 0); }
+    for(size_t f = 0; f < sp.size(); f++){
+        Array& F = *sp[f];
+        double a = 0.0; long c = 0;
+        #pragma omp parallel for collapse(2) schedule(static) reduction(+:a,c)
+        for(int i = 0; i < im; i++)
+            for(int j = 0; j < jm; j++)
+                for(int k = 0; k < km; k++)
+                    if(!(F.x[i][j][k] >= 0.0)){               // catches a NaN too
+                        if(std::isfinite(F.x[i][j][k])){ a -= F.x[i][j][k]; c++; }
+                        F.x[i][j][k] = 0.0;
+                    }
+        clamp_added[f] += a; clamp_cells[f] += c;
+    }
+}
+
+inline void cUranusModel::clampNegativeReport(){
+    if(clamp_added.empty()) return;
+    static const char* const n[] = { "h2o", "h2o_cloud", "h2o_ice", "h2s", "h2s_cloud", "h2s_ice",
+        "nh3", "nh3_cloud", "nh3_ice", "ch4", "ch4_cloud", "ch4_ice", "nh4sh" };
+    printf("\n      ATURAN: negative-value clamp, cumulative since start (sum of the clipped cell values, field units)\n");
+    for(size_t f = 0; f < clamp_added.size(); f++)
+        if(clamp_cells[f] > 0)
+            printf("        %-10s  gross %.4e over %10ld clippings\n", n[f], clamp_added[f], clamp_cells[f]);
+}
+
+inline void BC_Uran::bcRadius(){
+    BoundaryConditions<cUranusModel>(m).bcRadius();
+    m.floorRadialSpecies();
+}
 inline void BC_Uran::bcTheta()  { BoundaryConditions<cUranusModel>(m).bcTheta();  }
 inline void BC_Uran::bcPhi()    { BoundaryConditions<cUranusModel>(m).bcPhi();    }
 
