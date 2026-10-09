@@ -359,6 +359,8 @@ public:
     // and the shared algorithm leaves the field alone — one of the two behaviours had to be named
     // rather than assumed.
     static bool satadj_updates_pstat(){ return false; }
+    // Default of ATURAN_SATADJ_NEWTON (shared SaturationAdjustment.h): off, not run here yet.
+    static bool satadj_default_newton(){ return false; }
 
     // ---- Hooks for the shared FluxLimiter<Planet> (FluxLimiter.h) ----
     //

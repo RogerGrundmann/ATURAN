@@ -20,6 +20,7 @@
  *                                    away. This accessor already existed for exactly this purpose —
  *                                    it is what let Turbulence and PressureSolver be shared.
  *
+ *   Planet::satadj_default_newton()  the default of <TAG>_SATADJ_NEWTON, see the note below
  *   Planet::satadj_updates_pstat()   whether the hydrostatic pressure is rewritten from the
  *                                    adjusted temperature at the end of each cell. ATSAT does,
  *                                    ATJUP does not. This is a real modelling disagreement about
@@ -77,6 +78,30 @@
  *     (a planet whose ice pair is its liquid pair) it moves the mass and no heat.
  * The entry negatives and the final clamp are left as they are; the instrument sizes them.
  * With both knobs unset every written field is byte-identical to the routine before them.
+ *
+ * ===== <TAG>_SATADJ_NEWTON (2026-10-09), DEFAULT Planet::satadj_default_newton() =====
+ *
+ * The iteration is the fixed point q <- q + w (q_hyp(T(q)) - q) with a constant w = 1/2. Its
+ * contraction factor per pass is |1 - w (1 + G)|, where
+ *     G = (L / (cp rho)) dq_hyp/dT
+ * is the latent-heat feedback: condensing dq warms the cell and raises the saturation value by
+ * G dq. With w = 1/2 that is (1 - G)/2: fine near G = 1, but exactly 1/2 where G -> 0, and it
+ * diverges for G > 3. G -> 0 is the cold cell, and there the target can be the ICE saturation
+ * value while the entry test was made against the LIQUID one, so the vapour starts hundreds to
+ * thousands of times above its target and needs log2(ratio / 1e-3) passes of halving.
+ * MEASURED on ATJUP (2026-10-09, initial call): 1 341 235 of 2 463 691 adjusted H2O cells and
+ * 998 735 of 1 050 545 NH3 cells not converged in 15 passes; every one of them with T <= t_00,
+ * G < 0.5, a monotone approach, and a start 2 .. 7 000 times above the target.
+ *
+ * <TAG>_SATADJ_NEWTON=1 uses w = 1 / (1 + G), the Newton step of the same fixed point, with G
+ * from a one-sided difference of the pass's own target over 0.1 K and w kept in [0.05, 1]. The
+ * fixed point is the same; only the path to it changes. It costs two more saturation-pressure
+ * evaluations per pass.
+ *
+ * The default is the MODEL's: ATJUP returns true (measured there, flipped on the user's word),
+ * ATSAT, ATNEPT and ATURAN return false, where it has not been run. <TAG>_SATADJ_NEWTON=0 / 1
+ * overrides either way. With the step off every written field is byte-identical to the routine
+ * before it.
  */
 
 #pragma once
@@ -143,6 +168,9 @@ void SaturationAdjustment<Planet>::run(
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DIAG"); return e && atoi(e) != 0; }();
     static const bool conserve = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_CONSERVE"); return e && atoi(e) != 0; }();
+    static const bool newton = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_NEWTON");
+        return e ? atoi(e) != 0 : Planet::satadj_default_newton(); }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
     // Budget sums: weight sin(colatitude) * layer thickness [m] on densities [kg/m3] -> kg/m2.
     double w_before = 0.0, w_after = 0.0, w_norm = 0.0;
@@ -330,7 +358,30 @@ void SaturationAdjustment<Planet>::run(
                         cell_iter  = itr;
                         break;
                     }
-                    q_v_hyp = 0.5 * (q_v_hyp + q_v_b);   // has smoothing effect
+                    if(newton){
+                        // w = 1 / (1 + G), see the note at the top. The target is differenced with
+                        // this pass's phase weights held, which is all a step length needs.
+                        constexpr double dT = 0.1;
+                        const double q_Rain_d = rho_c * ep * ATPhys::saturation_vapour_pressure(
+                                                    T + dT, C,   L0,   R, del_alf,   del_bet)   / p_u;
+                        const double q_Ice_d  = rho_c * ep * ATPhys::saturation_vapour_pressure(
+                                                    T + dT, C_i, L0_i, R, del_alf_i, del_bet_i) / p_u;
+                        double q_hyp_d;
+                        if(q_c_b > 0.0 && q_i_b > 0.0)
+                            q_hyp_d = (q_c_b * q_Rain_d + q_i_b * q_Ice_d) / (q_c_b + q_i_b);
+                        else if(q_i_b == 0.0) q_hyp_d = q_Rain_d;
+                        else                  q_hyp_d = q_Ice_d;
+                        double CNDn = (T - t_00) * t_range_inv;
+                        if(T <= t_00) CNDn = 0.0;
+                        if(T >= t_0)  CNDn = 1.0;
+                        const double G = (lv * CNDn + ls * (1.0 - CNDn)) / (m.cp_mix * rho_c)
+                                       * (q_hyp_d - q_v_hyp) / dT;
+                        double w = 1.0 / (1.0 + std::max(G, 0.0));
+                        if(w < 0.05) w = 0.05;
+                        q_v_hyp = q_v_b + w * (q_v_hyp - q_v_b);
+                    } else {
+                        q_v_hyp = 0.5 * (q_v_hyp + q_v_b);   // has smoothing effect
+                    }
                 }
 
                 n_adjusted++;
