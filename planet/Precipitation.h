@@ -93,6 +93,28 @@ public:
     static constexpr double c_ac     = 1.0e-7;    // rain accretion of cloud
     static constexpr double c_rim    = 1.0e-8;    // riming of cloud by snow/graupel
     static constexpr double z_csg    = 2.5e-8;    // snow -> graupel conversion
+
+    // <TAG>_PRECIP_SCALE (2026-10-09): ONE factor on the five rate coefficients above, default
+    // Planet::precip_rate_scale(). They were set for Jupiter's condensate loading and Jupiter's
+    // emitted flux; a planet with another loading and another flux needs another factor, and
+    // scaling all five together keeps their balance, which is how the Jovian set was made from
+    // the terrestrial one. 1.0 (ATJUP) leaves every flux bit-identical.
+    //
+    // <TAG>_PRECIP_DIAG=1 is PRINT-ONLY: after each call it reports, per species, the
+    // sin(colatitude)-weighted mean over all columns of the column's LARGEST downward flux and of
+    // the flux at the surface, the latent-heat flux the former stands for, and how many cells sit
+    // on the P_max_flux cap. The calibration observable is that latent flux against the planet's
+    // emitted flux.
+    static double rate_scale(){
+        static const double v = ATPhys::env_double(Planet::planet_tag(), "PRECIP_SCALE",
+                                                   Planet::precip_rate_scale());
+        return v;
+    }
+    static bool diag_on(){
+        static const bool v = [](){
+            const char* e = ATPhys::env_for(Planet::planet_tag(), "PRECIP_DIAG"); return e && atoi(e) != 0; }();
+        return v;
+    }
     // NOT rescaled: rain evaporation is already bounded twice over (by the rain flux present and
     // by the saturation deficit), so it self-limits rather than setting the precipitation rate.
     static constexpr double a_ev     = 2.76e-3;   // rain evaporation coefficient
@@ -255,6 +277,7 @@ inline void Precipitation<Planet>::column(const Species& s){
     // Local copy: std::min binds by reference, and C++11 has no inline variables, so odr-using
     // the constexpr member directly would need an out-of-line definition in a header.
     const double ratio_cap   = ratio_max;
+    const double rs          = rate_scale();     // <TAG>_PRECIP_SCALE, 1.0 on ATJUP
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 0; j < jm; j++){
@@ -312,12 +335,12 @@ inline void Precipitation<Planet>::column(const Species& s){
                 const bool warm = (T >= s.t_frz);
 
                 // --- condensate -> precipitation conversions ([kg/(m3 s)], see units note) ---
-                const double S_c_au = (warm && q_c > q_c_crit) ? c_c_au * (q_c - q_c_crit) : 0.0;
-                const double S_i_au = (!warm && T >= s.t_low)  ? c_i_au * q_i             : 0.0;
-                const double S_ac   = (warm) ? c_ac * q_c * Rain_79 : 0.0;
-                const double S_s_rim= (!warm) ? c_rim * q_c * Snow    : 0.0;
-                const double S_g_rim= (!warm) ? c_rim * q_c * Graupel : 0.0;
-                const double S_csg  = (!warm && q_c > q_c_crit) ? z_csg * q_c * Snow : 0.0;
+                const double S_c_au = (warm && q_c > q_c_crit) ? (rs * c_c_au) * (q_c - q_c_crit) : 0.0;
+                const double S_i_au = (!warm && T >= s.t_low)  ? (rs * c_i_au) * q_i             : 0.0;
+                const double S_ac   = (warm) ? (rs * c_ac) * q_c * Rain_79 : 0.0;
+                const double S_s_rim= (!warm) ? (rs * c_rim) * q_c * Snow    : 0.0;
+                const double S_g_rim= (!warm) ? (rs * c_rim) * q_c * Graupel : 0.0;
+                const double S_csg  = (!warm && q_c > q_c_crit) ? (rs * z_csg) * q_c * Snow : 0.0;
 
                 // --- freezing-level handoff, limited by the arriving flux ---
                 // Melting turns falling snow/graupel into rain; freezing turns falling rain into
@@ -455,6 +478,44 @@ inline void Precipitation<Planet>::surfaceMap(){
             m.precip_srf_nh4sh.y[j][k] = nh4sh_srf;
             m.precip_srf_total.y[j][k] = h2o_srf + nh3_srf + ch4_srf + nh4sh_srf;
         }
+    }
+
+    if(diag_on()){
+        const int im = m.im;
+        constexpr double P_cap = 1.0e-4;                 // P_max_flux of column()
+        Array* P[3][3] = { { &m.P_rain,     &m.P_snow,     &m.P_graupel     },
+                           { &m.P_nh3_rain, &m.P_nh3_snow, &m.P_nh3_graupel },
+                           { &m.P_ch4_rain, &m.P_ch4_snow, &m.P_ch4_graupel } };
+        const char*  nm_[3] = { "H2O", "NH3", "CH4" };
+        const double Lv_[3] = { m.lv_h2o, m.lv_nh3, m.lv_ch4 };
+        double wsum = 0.0;
+        for(int j = 0; j < jm; j++) wsum += std::sin(m.the.z[j]) * km;
+        double latent_all = 0.0;
+        for(int g = 0; g < 3; g++){
+            double s_max = 0.0, s_srf = 0.0, top = 0.0; long n_cap = 0;
+            #pragma omp parallel for collapse(2) schedule(static) reduction(+:s_max,s_srf,n_cap) reduction(max:top)
+            for(int j = 0; j < jm; j++){
+                for(int k = 0; k < km; k++){
+                    const double w = std::sin(m.the.z[j]);
+                    double cmax = 0.0;
+                    for(int i = 0; i < im; i++){
+                        const double f = P[g][0]->x[i][j][k] + P[g][1]->x[i][j][k] + P[g][2]->x[i][j][k];
+                        if(f > cmax) cmax = f;
+                        for(int c = 0; c < 3; c++) if(P[g][c]->x[i][j][k] >= P_cap) n_cap++;
+                    }
+                    const int i_base = std::max(m.surface_index(j, k), 0);
+                    s_max += w * cmax;
+                    s_srf += w * (P[g][0]->x[i_base][j][k] + P[g][1]->x[i_base][j][k] + P[g][2]->x[i_base][j][k]);
+                    if(cmax > top) top = cmax;
+                }
+            }
+            const double mean_max = s_max / wsum, mean_srf = s_srf / wsum;
+            latent_all += Lv_[g] * mean_max;
+            printf("      %s: [PRECIP-DIAG] %s  column-max flux: mean %.4e max %.4e kg/m2/s (%.4f mm/d mean) = %.4e W/m2 latent;  at the surface: mean %.4e;  cells on the cap %ld\n",
+                   Planet::planet_tag(), nm_[g], mean_max, top, mean_max * 86400.0, Lv_[g] * mean_max, mean_srf, n_cap);
+        }
+        printf("      %s: [PRECIP-DIAG] all three: %.4e W/m2 latent against an emitted flux of %.3f W/m2 = F_int + S(1-A)/4  (PRECIP_SCALE = %g)\n",
+               Planet::planet_tag(), latent_all, Planet::rad_F_int() + 0.25 * Planet::rad_S_solar() * (1.0 - Planet::rad_albedo_bond()), rate_scale());
     }
 }
 

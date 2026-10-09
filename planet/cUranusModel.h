@@ -374,6 +374,9 @@ public:
     // fifth to a half of its cell-calls unconverged; with them both are zero.
     static bool satadj_default_newton(){ return true; }
     static bool satadj_default_conserve(){ return true; }
+    // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
+    // ATURAN_PRECIP_SCALE overrides.
+    static double precip_rate_scale(){ return 1.0; }
 
     // ---- Hooks for the shared FluxLimiter<Planet> (FluxLimiter.h) ----
     //
