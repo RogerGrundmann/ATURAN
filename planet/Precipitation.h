@@ -18,13 +18,16 @@
  * saturation adjustment against a member on the model — the same expression either way, now
  * ATPhys::saturation_vapour_pressure), and the ice-phase coefficient set.
  *
- * THE ICE COEFFICIENTS ARE NOT A CODE DIFFERENCE AND MUST NOT BE HIDDEN AS ONE. ATJUP has a
- * measured ice pair per species; ATSAT does not, and its model header now says so explicitly by
- * defining C_h2o_ice = C_h2o and so on as named placeholders. That way the shared scheme reads
- * one set of names on every planet, and the fact that one planet's ice curve is really its liquid
- * curve is a visible statement in that planet's parameter list rather than a silent divergence
- * buried in a copy of the microphysics. It is the same class of defect as t_00_ch4, which sat at
- * methane's critical temperature in two models at once precisely because there were two copies.
+ * THE ICE COEFFICIENTS ARE NOT A CODE DIFFERENCE AND MUST NOT BE HIDDEN AS ONE. The shared scheme
+ * reads one set of names on every planet (C_h2o_ice and so on), defined in each model's header.
+ * When this file was shared only ATJUP had an ice pair per species; the other models defined
+ * C_h2o_ice = C_h2o and so on as named placeholders, so that a planet's ice curve being really its
+ * liquid curve was a visible statement in its parameter list rather than a silent divergence
+ * buried in a copy of the microphysics. THE PLACEHOLDERS ARE GONE for H2O and NH3: the pairs are
+ * properties of the substance, ATJUP's, on ATSAT since 2026-10-09 and on ATNEPT and ATURAN since
+ * 2026-10-10. CH4 has its own pair where a model carries it. It was the same class of defect as
+ * t_00_ch4, which sat at methane's critical temperature in two models at once precisely because
+ * there were two copies.
  */
 /*
  * Jupiter Atmosphere Circulation Model (ATJUP)

@@ -106,8 +106,8 @@
  *
  * The default is the MODEL's, Planet::satadj_default_newton(), so that it can differ per planet;
  * since 2026-10-09 all four return true (ATJUP after 224 iterations, the other three after 16
- * with the routine selected by <TAG>_SATADJ=1: 17 % to 52 % of the adjusted cell-calls had not
- * converged there, none does with the step). <TAG>_SATADJ_NEWTON=0 / 1 overrides either way.
+ * with the routine selected by <TAG>_SATADJ=1: 13 % to 52 % of a gas's adjusted cell-calls had
+ * not converged there, ATNEPT's CH4 apart at 0 %; none does with the step). <TAG>_SATADJ_NEWTON=0 / 1 overrides either way.
  * With the step off every written field is byte-identical to the routine before it.
  */
 

@@ -60,7 +60,9 @@
  *  4. GAS PROPERTIES. nue_air defaults to the H2/He kinematic viscosity rather
  *     than air's 1.5e-5 m2/s.
  *
- * Gated by ATJUP_TURB (default 0 = off, bit-identical). Like ATOM, this fills
+ * Gated by the model. On ATJUP the one switch is turb_model, on by default since 2026-10-09
+ * (ATJUP_TURB_MODEL and ATJUP_TURB override it, ATJUP_TURB=0 = off); on ATSAT, ATNEPT and ATURAN
+ * it is <TAG>_TURB, default 0 = off. Like ATOM, this fills
  * tke/dis/nue/prod/tke_source/dis_source. nue* feeds the momentum and scalar equations
  * (ATJUP_TURB_COUPLING), and — as in ATOM — the two turbulence transport equations are
  * assembled in RHS_Jup_Turb.cpp and integrated by RungeKutta_Jup_Turb.cpp, which re-derive
