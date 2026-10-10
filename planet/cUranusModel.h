@@ -368,8 +368,8 @@ public:
     // rather than assumed.
     static bool satadj_updates_pstat(){ return false; }
     // Defaults of ATURAN_SATADJ_NEWTON and ATURAN_SATADJ_CONSERVE (shared SaturationAdjustment.h): ON since
-    // 2026-10-09. They act only when the shared routine is selected (ATURAN_SATADJ=1; the inherited
-    // routine is still this model's default). Run then for 16 iterations: without them the shared
+    // 2026-10-09. They act only when the shared routine is selected (ATURAN_SATADJ, this model's
+    // default since 2026-10-10). Run for 16 iterations: without them the shared
     // routine deleted ice above the melting point by the per cent of a gas's column and left a
     // fifth to a half of its cell-calls unconverged; with them both are zero.
     static bool satadj_default_newton(){ return true; }
@@ -891,26 +891,29 @@ private:
     double del_alf_nh3 = - 0.888;
     double del_bet_nh3 = 0.0;
 
-    // Ice-phase saturation quadruples, for the SHARED Precipitation.h. THESE MUST SIT AFTER THE
-    // LIQUID CONSTANTS THEY COPY: member initialisers run in DECLARATION order, so declaring them
-    // earlier reads uninitialised memory. ATNEPT recorded the same trap.
+    // Ice-phase saturation quadruples, read by the SHARED Precipitation.h and handed to the shared
+    // saturation adjustment by SaturationAdjustmentUran.cpp.
     //
-    // CH4's are real values; H2O's and NH3's are the LIQUID constants standing in, exactly as
-    // ATSAT's and ATNEPT's are — ATURAN's parameter set has no ice pair for either, and inventing
-    // numbers for Uranus's ices is a physics decision, not a port. It matters more here than
-    // anywhere: Uranus is the coldest of the four, so the ice branch is the one that carries.
+    // CH4's are real values. H2O's and NH3's are the SUBSTANCE's since 2026-10-10 (liquid copies
+    // before, as on ATSAT until its 3a275d6): ATJUP's pairs, made there by the rule
+    //     E_ice(T_triple) == E_liquid(T_triple),   L0_ice = L0_liquid * (ls / lv),
+    //     del_alf / del_bet as the liquid's,
+    // which gives E_ice < E_liquid below the triple point, as the mixed-phase scheme requires.
+    // ATURAN's liquid H2O and NH3 constants are ATJUP's to the digit, so the pairs meet these
+    // liquid curves as they meet ATJUP's: E_ice / E_liquid is 0.998 for H2O at 273.16 K and 0.994
+    // for NH3 at 195.4 K.
     double C_ch4_ice       = 1.627;
     double del_alf_ch4_ice = 1.002;
     double del_bet_ch4_ice = -4.1e-3;
     double L0_ch4_ice      = 553.1;
-    double C_h2o_ice       = C_h2o;
-    double del_alf_h2o_ice = del_alf_h2o;
-    double del_bet_h2o_ice = del_bet_h2o;
-    double L0_h2o_ice      = L0_h2o;
-    double C_nh3_ice       = C_nh3;
-    double del_alf_nh3_ice = del_alf_nh3;
-    double del_bet_nh3_ice = del_bet_nh3;
-    double L0_nh3_ice      = L0_nh3;
+    double C_h2o_ice       = 28.418;       // [bar]
+    double del_alf_h2o_ice = 0.0;
+    double del_bet_h2o_ice = -8.7e-3;
+    double L0_h2o_ice      = 3567.3;       // = 3148.2 * (2833.9 / 2500.9) [J/g]
+    double C_nh3_ice       = 34.948;       // [bar]
+    double del_alf_nh3_ice = -0.888;       // the liquid's
+    double del_bet_nh3_ice = 0.0;
+    double L0_nh3_ice      = 2692.5;       // = 2016.0 * (1832 / 1372) [J/g]
 
     double del_alf_h2s = 0.0;
     double del_bet_h2s = - 2.9e-3;

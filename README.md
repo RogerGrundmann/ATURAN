@@ -155,7 +155,7 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
 | `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
-| `ATURAN_SATADJ` | *see code* | mirrored saturation adjustment |
+| `ATURAN_SATADJ` | 1 | shared saturation adjustment, the default since 2026-10-10 (0 = the inherited routine) |
 
 **Numerics and experiment knobs**
 

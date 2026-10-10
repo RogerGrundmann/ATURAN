@@ -202,9 +202,8 @@ void SaturationAdjustmentUran::run_legacy(const std::string& gas,
 
 /*
  * Dispatch between the inherited routine above and the SHARED SaturationAdjustment<Planet>.
- * Default is the inherited one; ATURAN_SATADJ=1 selects the shared algorithm. See the header for
- * what is known about the difference (measured on ATSAT, not on Uranus) and for why the ice
- * quadruple below is the liquid one.
+ * Default is the shared algorithm since 2026-10-10; ATURAN_SATADJ=0 selects the inherited one.
+ * See the header for the 224-iteration comparison of the two.
  */
 void SaturationAdjustmentUran::run(const std::string& gas,
     double coeff_A,   double coeff_B,
@@ -222,11 +221,19 @@ void SaturationAdjustmentUran::run(const std::string& gas,
         return;
     }
 
-    // THE ICE QUADRUPLE IS THE LIQUID ONE — see the header. This is the single place to change
-    // when real Uranus ice coefficients exist; the shared algorithm already treats the liquid
-    // and ice pairs separately, so nothing else has to move.
+    // The ice quadruple, by gas. Until 2026-10-10 this passed the liquid one in its place; the
+    // model's H2O and NH3 ice coefficients are real now (cUranusModel.h has the note). A gas without
+    // an ice pair of its own gets its liquid pair.
+    double C_i = C, L0_i = L0, del_alf_i = del_alf, del_bet_i = del_bet;
+    if(gas == "H2O"){
+        C_i = m.C_h2o_ice; L0_i = m.L0_h2o_ice; del_alf_i = m.del_alf_h2o_ice; del_bet_i = m.del_bet_h2o_ice;
+    } else if(gas == "NH3"){
+        C_i = m.C_nh3_ice; L0_i = m.L0_nh3_ice; del_alf_i = m.del_alf_nh3_ice; del_bet_i = m.del_bet_nh3_ice;
+    } else if(gas == "CH4"){
+        C_i = m.C_ch4_ice; L0_i = m.L0_ch4_ice; del_alf_i = m.del_alf_ch4_ice; del_bet_i = m.del_bet_ch4_ice;
+    }
     SaturationAdjustment<cUranusModel>(m).run(gas, t_0, t_00, ep, lv, ls,
-                                              C, L0, R, del_alf, del_bet,
-                                              C, L0,    del_alf, del_bet,
+                                              C,   L0,   R, del_alf,   del_bet,
+                                              C_i, L0_i,    del_alf_i, del_bet_i,
                                               c, cloud, ice);
 }

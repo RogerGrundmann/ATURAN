@@ -34,20 +34,22 @@ public:
 
     explicit SaturationAdjustmentUran(cUranusModel& model) : m(model) {}
 
-    // Selects between ATURAN's inherited routine and the SHARED SaturationAdjustment<Planet>
-    // that ATSAT, ATJUP and ATNEPT instantiate. Default 0 = the inherited one, so the model is
-    // byte-identical until this is set. ATURAN_SATADJ=1 selects the shared algorithm.
+    // Selects between ATURAN's inherited routine and the SHARED SaturationAdjustment<Planet>.
+    // DEFAULT 1 = the shared algorithm SINCE 2026-10-10 (the user's decision, taken together with
+    // the H2O and NH3 ice pairs in cUranusModel.h); ATURAN_SATADJ=0 restores the inherited
+    // routine. Every ATURAN number before that commit was made with the inherited routine unless
+    // its run set the knob, and with the liquid coefficients in the ice slots.
     //
-    // NOT YET EVALUATED ON URANUS. On ATSAT the switch was measured to condense 16 % less peak
-    // cloud water and move the deck a layer higher, and which of the two is right was not settled
-    // there or on Neptune. The same caveat applies here and one more besides: the ice-phase
-    // coefficient quadruple passed in the .cpp is the LIQUID one, because ATURAN's parameter set
-    // has no ice pair for H2O, NH3 or CH4 — and Uranus is the coldest of the four, so the ice
-    // branch is the one that matters most. Supplying real ice coefficients is what would make
-    // this knob worth turning on.
+    // 224 iterations, 8 threads (ATJUP/satchk/giants/URAN224i, URAN224s), inherited -> shared with
+    // the ice pairs: 57 of 118 printed extrema identical, temperature, u and w among them;
+    // max h2o_cloud 47.54 -> 49.11 g/m3, max nh3_ice 77.78 -> 85.09 (+9 %), max latent heat
+    // 68.59 -> 67.18 W/m3; nh3_cloud and ch4_cloud, exactly zero with the inherited routine, reach
+    // 0.31 and 12.79 g/m3. The shared routine's own budget over its 113 calls: no ice deleted,
+    // no cell unconverged, column change of each gas below 1e-6 g/m2. The inherited routine has
+    // no such instrument. Which of the two is right on Uranus is not settled by a measurement.
     static int mirrored_enabled(){
         static const int v = [](){
-            const char* e = getenv("ATURAN_SATADJ"); return e ? atoi(e) : 0; }();
+            const char* e = getenv("ATURAN_SATADJ"); return e ? atoi(e) : 1; }();
         return v;
     }
 
