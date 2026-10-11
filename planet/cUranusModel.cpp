@@ -99,8 +99,13 @@ static int radiation_enabled(){
     return v;
 }
 
+// ATURAN_TURB: -1 = not set. turb_model IS the switch since 2026-10-11 (the user's word), as on ATJUP
+// since 2026-10-09: the closure runs unless turb_model (or ATURAN_TURB_MODEL, which overrides it) is
+// "none" / "laminar" / empty, and param.py's default is k_omega_SST, so a stock run has it ON.
+// Until then the closure needed ATURAN_TURB=1 as well and the configured model alone did nothing.
+// ATURAN_TURB=0 still switches it off; any other value leaves the decision to turb_model.
 static int turb_env_enabled(){
-    static const int v = [](){ const char* e = getenv("ATURAN_TURB"); return e ? atoi(e) : 0; }();
+    static const int v = [](){ const char* e = getenv("ATURAN_TURB"); return e ? atoi(e) : -1; }();
     return v;
 }
 
@@ -404,7 +409,7 @@ void cUranusModel::Run(){
     // turb_model = "none" still ran the closure. Both are consulted here and the answer is a bool
     // the rest of the run reads. ATURAN_TURB_MODEL overrides the configured string first.
     if(const char* tm = getenv("ATURAN_TURB_MODEL")) turb_model = tm;
-    turb_active = (turb_env_enabled() != 0) && (turb_model != "none");
+    turb_active = (turb_env_enabled() != 0) && !(turb_model.empty() || turb_model == "none" || turb_model == "laminar");
 
     init_layer_heights();
     TropopauseLocation();

@@ -151,7 +151,7 @@ and turbulence remain diagnostic-only here.
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `ATURAN_PRECIP` | 0 | precipitation scheme; fills `P_*`, `Q_precip`, `S_precip_*` (diagnostic only here — nothing reads `S_precip_*`) |
-| `ATURAN_TURB` | 0 | run the closure |
+| `ATURAN_TURB` | unset | the closure runs whenever `turb_model` is not `none` (default since 2026-10-11); `ATURAN_TURB=0` switches it off |
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
 | `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
