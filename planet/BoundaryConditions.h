@@ -42,8 +42,8 @@
  *   Planet::bc_default_form()   THE reason this file can exist at all — see below.
  *
  *   Planet::bc_pole_open_rows() How many rows next to each pole the Runge-Kutta step does NOT
- *                               integrate (ATJUP 2, ATSAT 1, ATNEPT and ATURAN 0). Read only
- *                               with <TAG>_BC_POLE_FILL, see bcTheta.
+ *                               integrate (ATJUP 2, ATSAT 1, ATNEPT and ATURAN 0). bcTheta fills
+ *                               them unless <TAG>_BC_POLE_FILL=0.
  *
  *   Planet::bc_default_*()      Each knob's default. ATJUP ships rigid_lid and top_taper ON, on
  *                               Jupiter evidence; ATSAT ships everything OFF, because on Saturn
@@ -118,7 +118,7 @@ private:
     static int radius_copy(){
         static const int v = knob("BC_RADIUS_COPY", Planet::bc_default_radius_copy()); return v; }
     static int pole_fill(){
-        static const int v = knob("BC_POLE_FILL", 0); return v; }
+        static const int v = knob("BC_POLE_FILL", 1); return v; }
     static int seam_damp(){
         static const int v = knob("BC_SEAM_DAMP", 0); return v; }
     static int t_lid_pin(){
@@ -289,7 +289,7 @@ void BoundaryConditions<Planet>::bcTheta()
     const int nt = (int)turb.size();
     const bool turb_bc = m.bc_turb_active();
 
-    // <TAG>_BC_POLE_FILL (2026-10-11; default 0 = off, 1 = on): the rows BETWEEN the pole and the
+    // <TAG>_BC_POLE_FILL (2026-10-11; DEFAULT 1 on the user's word, 0 restores): the rows BETWEEN the pole and the
     // first row the Runge-Kutta step integrates. The step runs j = 2..jm-3 on ATSAT and
     // j = 3..jm-4 on ATJUP, and this routine wrote only j = 0 and j = jm-1 -- so j = 1 (ATSAT)
     // and j = 1, 2 (ATJUP) and their southern mirrors were written by nobody and kept the INITIAL
@@ -302,7 +302,11 @@ void BoundaryConditions<Planet>::bcTheta()
     // + 1: the extrapolated fields by a plain copy (amplification 1.0, as for the pole itself),
     // the fields that are zero on the axis by a linear ramp to that zero. It runs BEFORE the pole
     // row is set, so the pole reads filled neighbours. ATNEPT and ATURAN integrate j = 1..jm-2
-    // and answer 0 rows: nothing to fill there.
+    // and answer 0 rows: nothing to fill there, so the default is one constant for all four.
+    // 1000 iterations with it against without (satchk/giants/S1000pf, satchk/J1000pf): the polar
+    // rows equal the first integrated row; the difference in total H2O is below 1e-3 g/m3 from
+    // j = 6 on, and 78 of 100 (ATSAT) and 97 of 120 (ATJUP) printed extrema are identical, the
+    // others having sat in the frozen rows.
     const int nfill = (pole_fill() != 0) ? Planet::bc_pole_open_rows() : 0;
 
     #pragma omp parallel for

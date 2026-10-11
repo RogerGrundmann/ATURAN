@@ -134,7 +134,8 @@
  * flux is uniform (= F_int) and Q_rad -> 0; a column out of equilibrium shows the tendency toward
  * it, and that is the intended self-test.
  *
- * Gated by <TAG>_RADIATION (default 0 = off, bit-identical).
+ * Gated by <TAG>_RADIATION (default 1 on all four planets: ATJUP since 2026-10-08, the other
+ * three since 2026-10-11; 0 = off).
 */
 
 #pragma once

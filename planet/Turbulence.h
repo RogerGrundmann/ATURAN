@@ -489,7 +489,12 @@ inline void Turbulence<Planet>::compute_sources(){
                 if(is_land(i, j, k)) continue;
 
                 // ---- geometry ----
-                const double rm        = m.rad.z[i];
+                // The METRIC radius, as RungeKutta and the pressure solver use it (2026-10-11).
+                // This read rad.z raw: identical on ATJUP, whose rad.z is already shifted, but
+                // on ATSAT / ATNEPT / ATURAN rad.z runs 1..2 and metricRadius() adds the planet,
+                // so every horizontal gradient in the production tensor was taken on a unit
+                // sphere. It did not matter while the closure was off there by default.
+                const double rm        = m.metricRadius(m.rad.z[i]);
                 // coord_stretching, like everywhere else. This module applied 1/(rm+1)
                 // UNCONDITIONALLY while RungeKutta_Jup_Turb and PressureSolverJup both gate it
                 // on the flag, which defaults to false. Every radial velocity gradient feeding
@@ -704,7 +709,7 @@ inline void Turbulence<Planet>::compute_k_omega(int i, int j, int k,
     const double C_lim    = 0.875;
     const double bet_0    = 0.0708;
 
-    const double rm       = m.rad.z[i];
+    const double rm       = m.metricRadius(m.rad.z[i]);     // the metric radius, see run()
     double sinthe         = std::sin(m.the.z[j]);
     if(sinthe == 0.0) sinthe = 1.0e-5;
     const double rmsinthe = rm * sinthe;
