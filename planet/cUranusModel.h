@@ -250,6 +250,7 @@ public:
     static int bc_default_top_taper(){ return 0; }
     static int bc_default_pole_copy(){ return 0; }
     static int bc_default_radius_copy(){ return 0; }
+    static int bc_pole_open_rows(){ return 0; }   // rows next to each pole that RungeKutta does not integrate (<TAG>_BC_POLE_FILL)
 
     std::vector<Array*> bc_fields_radius();
     // The two species floors (ATURAN_BC_RADIUS_POSITIVE, ATURAN_SPECIES_CLAMP, both default 1), defined

@@ -41,6 +41,10 @@
  *
  *   Planet::bc_default_form()   THE reason this file can exist at all — see below.
  *
+ *   Planet::bc_pole_open_rows() How many rows next to each pole the Runge-Kutta step does NOT
+ *                               integrate (ATJUP 2, ATSAT 1, ATNEPT and ATURAN 0). Read only
+ *                               with <TAG>_BC_POLE_FILL, see bcTheta.
+ *
  *   Planet::bc_default_*()      Each knob's default. ATJUP ships rigid_lid and top_taper ON, on
  *                               Jupiter evidence; ATSAT ships everything OFF, because on Saturn
  *                               none of it is measured yet.
@@ -113,6 +117,8 @@ private:
         static const int v = knob("BC_POLE_COPY", Planet::bc_default_pole_copy()); return v; }
     static int radius_copy(){
         static const int v = knob("BC_RADIUS_COPY", Planet::bc_default_radius_copy()); return v; }
+    static int pole_fill(){
+        static const int v = knob("BC_POLE_FILL", 0); return v; }
     static int seam_damp(){
         static const int v = knob("BC_SEAM_DAMP", 0); return v; }
     static int t_lid_pin(){
@@ -283,9 +289,49 @@ void BoundaryConditions<Planet>::bcTheta()
     const int nt = (int)turb.size();
     const bool turb_bc = m.bc_turb_active();
 
+    // <TAG>_BC_POLE_FILL (2026-10-11; default 0 = off, 1 = on): the rows BETWEEN the pole and the
+    // first row the Runge-Kutta step integrates. The step runs j = 2..jm-3 on ATSAT and
+    // j = 3..jm-4 on ATJUP, and this routine wrote only j = 0 and j = jm-1 -- so j = 1 (ATSAT)
+    // and j = 1, 2 (ATJUP) and their southern mirrors were written by nobody and kept the INITIAL
+    // condition for the whole run, the pole row copying it. MEASURED, 1000 iterations
+    // (satchk/giants/S1000, j = 0 / 1 / 2): h2o_cloud at i=13 56.93 / 56.93 / 39.34 g/m3, nh3_ice
+    // at i=26 3.538 / 3.538 / 0.745, ch4 at i=39 0.0066 / 0.0066 / 20.71; on ATJUP (satchk/J1000)
+    // v, nh3, nh3_ice and h2o at j = 1, 2 equal their iteration-0 values to four digits. The
+    // first integrated row differenced against that frozen wall.
+    // With 1 every such row is set from the first integrated row jf = Planet::bc_pole_open_rows()
+    // + 1: the extrapolated fields by a plain copy (amplification 1.0, as for the pole itself),
+    // the fields that are zero on the axis by a linear ramp to that zero. It runs BEFORE the pole
+    // row is set, so the pole reads filled neighbours. ATNEPT and ATURAN integrate j = 1..jm-2
+    // and answer 0 rows: nothing to fill there.
+    const int nfill = (pole_fill() != 0) ? Planet::bc_pole_open_rows() : 0;
+
     #pragma omp parallel for
     for(int k = mg; k < km-mg; k++){
         for(int i = mg; i < im-mg; i++){
+            if(nfill > 0){
+                const int jf = nfill + 1;
+                for(int r = 1; r <= nfill; r++){
+                    const double ramp = (double)r / (double)jf;
+                    for(int f = 0; f < nf; f++){
+                        Array& F = *fields[f];
+                        F.x[i][r][k]      = F.x[i][jf][k];
+                        F.x[i][jm-1-r][k] = F.x[i][jm-1-jf][k];
+                    }
+                    for(int f = 0; f < nz; f++){
+                        Array& F = *zeros[f];
+                        F.x[i][r][k]      = ramp * F.x[i][jf][k];
+                        F.x[i][jm-1-r][k] = ramp * F.x[i][jm-1-jf][k];
+                    }
+                    if(turb_bc){
+                        for(int f = 0; f < nt; f++){
+                            Array& F = *turb[f];
+                            F.x[i][r][k]      = std::max(floors[f], F.x[i][jf][k]);
+                            F.x[i][jm-1-r][k] = std::max(floors[f], F.x[i][jm-1-jf][k]);
+                        }
+                    }
+                }
+            }
+
             for(int f = 0; f < nz; f++){
                 Array& F = *zeros[f];
                 F.x[i][0][k]    = 0.0;
