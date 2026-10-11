@@ -9,6 +9,7 @@
 */
 
 #include "cUranusModel.h"
+#include "TbUran.h"
 
 using namespace std;
 
@@ -408,7 +409,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // at ~2.7 bar with a decoupled warm blob above it whose top is what the photosphere diagnostic
     // then reads. See the measurement in the commit that added this knob.
     static const double tmf_scale = [](){
-        const char* e = getenv("ATURAN_THERMAL_MASSFLUX"); return e ? atof(e) : 1.0; }();
+        const char* e = getenv("ATURAN_THERMAL_MASSFLUX"); return e ? atof(e) : 0.0; }();   // 0 since 2026-10-11, see ATURAN_DAMP_T_VERT in cUranusModel.cpp; 1 restores
 
     // ===== Radiative heating source (ATURAN_RAD_COUPLING, default 0 = off, bit-identical) =====
     //
@@ -475,6 +476,25 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + diffusion_t / (re * pr) + diffusion_t * nue_t_s
         - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k]
         + radiation_t;
+
+    // ATURAN_TB_DIAG (print-only, see TbUran.h): RK4-weighted level sums of each term of rhs_t, per
+    // thread. Nothing here is read by the model.
+    if(UranTb::st().on && i < UranTb::MAXLEV){
+        const double cw = UranTb::st().stage_wgt * std::sin(the.z[j]);
+        #ifdef _OPENMP
+            const int th_ = omp_get_thread_num();
+        #else
+            const int th_ = 0;
+        #endif
+        double (*a_)[UranTb::MAXLEV] = UranTb::st().acc[th_];
+        a_[UranTb::T_PRESS][i]  += cw * pressure_t;
+        a_[UranTb::T_TR_RAD][i] -= cw * u_ijk * dtdr;
+        a_[UranTb::T_TR_THE][i] -= cw * v_invrm * dtdthe;
+        a_[UranTb::T_TR_PHI][i] -= cw * w_invrs * dtdphi;
+        a_[UranTb::T_DIFF][i]   += cw * (diffusion_t / (re * pr) + diffusion_t * nue_t_s);
+        a_[UranTb::T_TMF][i]    -= cw * tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k];
+        a_[UranTb::T_RAD][i]    += cw * radiation_t;
+    }
 
     // Item 1's instrument: the same five terms, recorded separately for one column at stage 0.
     // Signs are as they enter the sum above, so the five add to tbud_tot exactly. See the note on

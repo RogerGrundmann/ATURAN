@@ -161,10 +161,12 @@ and turbulence remain diagnostic-only here.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `ATURAN_THERMAL_MASSFLUX` | 1.0 | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
+| `ATURAN_THERMAL_MASSFLUX` | 0.0 since 2026-10-11 (was 1.0) | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
+| `ATURAN_RK_SCALAR_SYNC` | 2 | since 2026-10-11: the Runge-Kutta step starts from the state the saturation adjustment left (2 = condensate and temperature, 1 = condensate only, 0 = before: both discarded every step) |
+| `ATURAN_TB_DIAG=<n>` | off | print-only: every n iterations, which stage of the loop and which term of `rhs_t` changed the level-mean temperature (`planet/TbUran.h`) |
 | `ATURAN_SINTHE_MIN` | 0.4 | polar floor on sin θ, and **the single place it is written** since `a31b473`: the integrator, the chemistry and this model's own pressure solver all read it instead of the three hardcoded 0.4 literals they used to carry |
 | `ATURAN_PRESS_SOLVER` | 0 | 0 = this model's own Gauss-Seidel (serial since the race fix); 1 = the shared red-black `PressureSolver<Planet>` |
-| `ATURAN_DAMP_T_VERT` | 1.0 | Strength of the **vertical** pass of the Shapiro filter on `t`; horizontal passes untouched. 1.0 is bit-identical to the unsplit call. 0.0 disables it. **This is the largest single term in item 1** — see the sweep there |
+| `ATURAN_DAMP_T_VERT` | 0.0 since 2026-10-11 (was 1.0) | Strength of the **vertical** pass of the Shapiro filter on `t`; horizontal passes untouched. 1.0 is bit-identical to the unsplit call. 0.0 disables it. **This is the largest single term in item 1** — see the sweep there |
 | `ATURAN_TBUDGET` | 0 | Per-layer decomposition of `rhs_t` into its five terms, one column, RK stage 0. Measurement only. See item 1 |
 | `ATURAN_TATTRIB` | 0 | Per-stage attribution of the column's actual kelvin — which routine moved `t`, not which term. Measurement only. **This is the one that answers item 1** |
 | `ATURAN_TBUDGET_J` / `_K` | 90 / 180 | Column both instruments report, defaulting to the equator at mid-longitude |
@@ -299,6 +301,18 @@ radial, zonal, and longitudinal cross-sections).
 ---
 
 ## Known limitations
+
+> **State of 2026-10-11 — read this before the numbered items.** Three defaults changed that day and
+> the items below were measured before them: `ATURAN_DAMP_T_VERT` 0 (the vertical pass of the Shapiro
+> filter on `t` is off), `ATURAN_THERMAL_MASSFLUX` 0 (the diffusive-enthalpy term is out of `rhs_t`) and
+> `ATURAN_RK_SCALAR_SYNC` 2 (the time step keeps the saturation adjustment's condensate and latent heat
+> instead of discarding them). `ATURAN_TB_DIAG=<n>` (print-only, `planet/TbUran.h`) charges the level-mean
+> temperature change to each stage of the loop and each term of `rhs_t`; over 224 iterations it gives,
+> at levels 1 / 20 / 35 / 39, **-65.8 / -7.8 / +37.5 / +69.5 K before and -2.9 / -0.5 / +1.1 / +2.3 K after**, mean OLR **21.1 → 1.51 W/m²** against 0.689 in
+> and a photosphere of **137.0 → 69.1 K**. The filter was the drift; with it off the thermal mass flux
+> term dug a cold hole (-17 K at level 28), so both went together. What remains is the diffusion term at the two
+> radial ends and a rougher profile. Each knob set to its old value (1, 1, 0) restores the model the
+> items below describe.
 
 None of these stops a run; all of them affect what a result means.
 

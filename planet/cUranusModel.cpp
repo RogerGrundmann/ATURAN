@@ -11,6 +11,7 @@
 */
 
 #include "cUranusModel.h"
+#include "TbUran.h"
 
 #include "ChemistryUran.h"
 #include "PressureSolverUran.h"
@@ -557,6 +558,40 @@ void cUranusModel::Run(){
 
 
 
+    // ATURAN_TB_DIAG=<n> (print-only, see TbUran.h): the level-mean temperature after every stage of
+    // the loop that can write t, charged to that stage, in K; printed every n iterations.
+    static const int tb_every = [](){ const char* e = getenv("ATURAN_TB_DIAG"); return e ? atoi(e) : 0; }();
+    const bool tb_on = tb_every > 0 && im <= UranTb::MAXLEV;
+    UranTb::st().on = tb_on;
+    enum { TB_PRE = 0, TB_SATADJ, TB_PRECIP, TB_PHYS, TB_RK_RESET, TB_RK_REST, TB_BC, TB_CLAMP, TB_AFTER, TB_N };
+    static const char* tb_name[TB_N] = { "pressure", "sat.adjust", "precip", "chem/latent", "RK reset", "RK rest",
+        "BC", "clamp", "turb/conv" };
+    static const char* tb_term[UranTb::NTERM] = { "RK press.work", "RK transp r", "RK transp the", "RK transp phi",
+        "RK diffusion", "RK th.massflux", "RK radiation", "RK precip" };
+    std::vector<std::vector<double>> tb_sum(TB_N, std::vector<double>(im, 0.0)), tb_tsum(UranTb::NTERM, std::vector<double>(im, 0.0));
+    std::vector<double> tb_last(im, 0.0), tb_first(im, 0.0);
+    double tb_norm = 0.0;
+    auto tb_lev = [&](Array& a) -> std::vector<double> {
+        std::vector<double> m_(im, 0.0);
+        #pragma omp parallel for schedule(static)
+        for(int i = 0; i < im; i++){
+            double s_ = 0.0;
+            for(int j = 0; j < jm; j++){
+                const double sj = std::sin(the.z[j]);
+                for(int k = 0; k < km; k++) s_ += sj * a.x[i][j][k];
+            }
+            m_[i] = s_ * t_ref / tb_norm;
+        }
+        return m_; };
+    auto tb_mark = [&](int stage){
+        if(!tb_on) return;
+        const std::vector<double> w_ = tb_lev(t);
+        for(int i = 0; i < im; i++){ tb_sum[stage][i] += w_[i] - tb_last[i]; tb_last[i] = w_[i]; } };
+    if(tb_on){
+        for(int j = 0; j < jm; j++) tb_norm += std::sin(the.z[j]) * km;
+        tb_last = tb_first = tb_lev(t);
+    }
+
     for(iter_n = 1; iter_n <= nm; iter_n++){
 
         tattribBegin();   // no-op unless ATURAN_TATTRIB is set
@@ -577,6 +612,7 @@ void cUranusModel::Run(){
             if(press_solver_shared()) PressureSolver<cUranusModel>(*this).run();
             else                      PressureSolverUran(*this).run();
             AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
+            tb_mark(TB_PRE);
             tattrib("pressure+damp");
 
             SaturationAdjustmentUran(*this).run("H2O",
@@ -610,7 +646,42 @@ void cUranusModel::Run(){
             tattrib("SaturationAdjust");
 
             // Must follow the saturation adjustments: it removes condensate in place.
+            tb_mark(TB_SATADJ);
             if(precip_enabled()) PrecipitationUran(*this).run();
+            tb_mark(TB_PRECIP);
+
+            // ATURAN_RK_SCALAR_SYNC=<0|1|2> (2026-10-11; DEFAULT 2 on the user's word, 0 restores):
+            // ATJUP's repair of 2026-10-08, as ported to ATSAT the same day. RungeKuttaUran
+            // integrates every scalar from its n-level copy (h2on, ..., tn), and restoreVar
+            // refreshed those at the END of the previous iteration -- before the saturation
+            // adjustment above ran. So everything the adjustment writes directly (the condensate
+            // it forms, the latent heat it releases) was overwritten by the step that follows.
+            // 1 copies the twelve condensable fields into their n-level copies, so the step starts
+            // from the adjusted state; 2 copies the temperature too, so the latent heat goes with
+            // the condensate. The in-place precipitation above is kept by it as well.
+            static const int rk_scalar_sync = [](){ const char* e = getenv("ATURAN_RK_SCALAR_SYNC"); return e ? atoi(e) : 2; }();
+            if(rk_scalar_sync >= 1){
+                #pragma omp parallel for collapse(2) schedule(static)
+                for(int i = 0; i < im; i++){
+                    for(int j = 0; j < jm; j++){
+                        for(int k = 0; k < km; k++){
+                            h2on.x[i][j][k]       = h2o.x[i][j][k];
+                            h2o_cloudn.x[i][j][k] = h2o_cloud.x[i][j][k];
+                            h2o_icen.x[i][j][k]   = h2o_ice.x[i][j][k];
+                            h2sn.x[i][j][k]       = h2s.x[i][j][k];
+                            h2s_cloudn.x[i][j][k] = h2s_cloud.x[i][j][k];
+                            h2s_icen.x[i][j][k]   = h2s_ice.x[i][j][k];
+                            nh3n.x[i][j][k]       = nh3.x[i][j][k];
+                            nh3_cloudn.x[i][j][k] = nh3_cloud.x[i][j][k];
+                            nh3_icen.x[i][j][k]   = nh3_ice.x[i][j][k];
+                            ch4n.x[i][j][k]       = ch4.x[i][j][k];
+                            ch4_cloudn.x[i][j][k] = ch4_cloud.x[i][j][k];
+                            ch4_icen.x[i][j][k]   = ch4_ice.x[i][j][k];
+                            if(rk_scalar_sync >= 2) tn.x[i][j][k] = t.x[i][j][k];
+                        }
+                    }
+                }
+            }
             tattrib("Precipitation");
 
             ChemistryUran(*this).DiffMassFluxUran();
@@ -634,10 +705,34 @@ void cUranusModel::Run(){
             tattrib("Forces");
             Latent_Heat();
             tattrib("Latent_Heat");
+            tb_mark(TB_PHYS);
 
         }  // if loop
 
+        std::vector<double> tb_n;
+        if(tb_on){
+            tb_n = tb_lev(tn);                                          // what the step starts from
+            for(int t_ = 0; t_ < UranTb::MAXTHR; t_++) for(int q_ = 0; q_ < UranTb::NTERM; q_++)
+                for(int i = 0; i < im; i++) UranTb::st().acc[t_][q_][i] = 0.0;
+        }
+
         RungeKuttaUran();
+
+        if(tb_on){
+            const std::vector<double> w_ = tb_lev(t);
+            for(int i = 0; i < im; i++){
+                double step_terms = 0.0;
+                for(int q_ = 0; q_ < UranTb::NTERM; q_++){
+                    double a_ = 0.0;
+                    for(int t_ = 0; t_ < UranTb::MAXTHR; t_++) a_ += UranTb::st().acc[t_][q_][i];
+                    a_ *= dt / 6.0 * t_ref / tb_norm;
+                    tb_tsum[q_][i] += a_; step_terms += a_;
+                }
+                tb_sum[TB_RK_RESET][i] += tb_n[i] - tb_last[i];
+                tb_sum[TB_RK_REST][i]  += w_[i] - tb_n[i] - step_terms;
+                tb_last[i] = w_[i];
+            }
+        }
         tattrib("RungeKutta");
 
         // ===== THE VERTICAL PASS OF THE t FILTER HAS ITS OWN STRENGTH =====
@@ -655,8 +750,19 @@ void cUranusModel::Run(){
         //
         // 0.0 disables the vertical pass entirely and is the diagnostic extreme, not a proposal.
         // README item 1 carries the sweep and what it costs.
+        // DEFAULT 0.0 SINCE 2026-10-11 on the user's word (1.0 restores the filter of every run
+        // before that). MEASURED with ATURAN_TB_DIAG, 224 iterations, level-mean change in K at levels
+        // 1 / 20 / 35 / 39 (satchk/giants/URANtbB against URANtbE):
+        //     vertical pass 1.0, thermal mass flux 1     -65.8 / -7.8 / +37.5 / +69.5
+        //     vertical pass 0.0, thermal mass flux 0     -2.9 / -0.5 / +1.1 / +2.3
+        // mean OLR 21.1 -> 1.51 W/m2 against 0.689 in, photosphere 137.0 -> 69.1 K; exit 0, no non-finite
+        // value. With the pass off and the thermal mass flux still on, that term digs a cold hole
+        // (-17 K at level 28), which is why ATURAN_THERMAL_MASSFLUX went to 0 in the same change.
+        // What is left is the diffusion term at the two radial ends (the 2-point wall value does
+        // not continue a straight lapse) and a rougher profile: the README's sweep measured the
+        // mean second difference 3.1 times larger at 0.0 than at 1.0, with nothing oscillating.
         static const double damp_t_vert = [](){
-            const char* e = getenv("ATURAN_DAMP_T_VERT"); return e ? atof(e) : 1.0; }();
+            const char* e = getenv("ATURAN_DAMP_T_VERT"); return e ? atof(e) : 0.0; }();
         AtomUtils::damp_wiggles(t, nullptr, false, true, true);              // horizontal, unchanged
         if(damp_t_vert != 0.0)
             AtomUtils::damp_wiggles(t, nullptr, true, false, false, damp_t_vert);
@@ -668,7 +774,9 @@ void cUranusModel::Run(){
         BC_Uran(*this).bcRadius();                                      // extrapolation in i-direction along grid boundaries
         BC_Uran(*this).bcTheta();                                       // extrapolation in j-direction along grid boundaries
         BC_Uran(*this).bcPhi();                                         // extrapolation in k-direction along grid boundaries
+        tb_mark(TB_BC);
         clampNegativeSpecies();                                         // ATURAN_SPECIES_CLAMP, default on (BC_Uran.h)
+        tb_mark(TB_CLAMP);
         tattrib("BoundaryConds");
 
         // How far the run is from a steady state, and WHERE. MUST run BEFORE restoreVar: it
@@ -691,6 +799,26 @@ void cUranusModel::Run(){
         if(radiation_enabled()) RadiationUran(*this).run();
         if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
+        tb_mark(TB_AFTER);
+        if(tb_on && iter_n % tb_every == 0){
+            static const int lv_[] = { 0, 1, 2, 3, 5, 8, 12, 16, 20, 24, 28, 32, 35, 37, 38, 39, 40 };
+            const int nl_ = (int)(sizeof(lv_) / sizeof(lv_[0]));
+            printf("\n      ATURAN: [TB] level-mean temperature, cumulative over iterations %d..%d, K\n      ATURAN: [TB] %-15s", 1, iter_n, "level");
+            for(int l = 0; l < nl_; l++) if(lv_[l] < im) printf(" %8d", lv_[l]);
+            printf("\n      ATURAN: [TB] %-15s", "T now");
+            for(int l = 0; l < nl_; l++) if(lv_[l] < im) printf(" %8.2f", tb_last[lv_[l]]);
+            printf("\n      ATURAN: [TB] %-15s", "change");
+            for(int l = 0; l < nl_; l++) if(lv_[l] < im) printf(" %+8.3f", tb_last[lv_[l]] - tb_first[lv_[l]]);
+            for(int q_ = 0; q_ < TB_N; q_++){
+                printf("\n      ATURAN: [TB] %-15s", tb_name[q_]);
+                for(int l = 0; l < nl_; l++) if(lv_[l] < im) printf(" %+8.3f", tb_sum[q_][lv_[l]]);
+                if(q_ == TB_RK_RESET) for(int r_ = 0; r_ < UranTb::NTERM; r_++){
+                    printf("\n      ATURAN: [TB] %-15s", tb_term[r_]);
+                    for(int l = 0; l < nl_; l++) if(lv_[l] < im) printf(" %+8.3f", tb_tsum[r_][lv_[l]]);
+                }
+            }
+            printf("\n");
+        }
 
         tattrib("Rad/Turb/ConvAdj");
 
