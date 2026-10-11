@@ -134,7 +134,7 @@ void cUranusModel::paraview_panorama_vts(int n){
 
     // Radiation pair, matching ATJUP and ATSAT: Q_rad scaled to mW/m3 because the raw W/m3 values
     // are ~1e-5 and plot as a flat zero field, radiation left in W/m2. Both are identically zero
-    // unless ATURAN_RADIATION is set.
+    // when ATURAN_RADIATION=0.
     dump_array("Q_rad_mW_m3", Q_rad, 1.0e3, Uranus_panorama_vts_File);
     dump_array("Radiation", radiation, 1.0, Uranus_panorama_vts_File);
     dump_array("Emissivity", epsilon, 1.0, Uranus_panorama_vts_File);
@@ -216,7 +216,7 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
     dump_radial("Q_Sensible", Q_Sensible, 1.0, i_radial, Uranus_vtk_radial_File);
 
     // Radiation pair, matching ATJUP and ATSAT. Q_rad in mW/m3, radiation in W/m2;
-    // both identically zero unless ATURAN_RADIATION is set.
+    // both identically zero when ATURAN_RADIATION=0.
     dump_radial("Q_rad_mW_m3", Q_rad, 1.0e3, i_radial, Uranus_vtk_radial_File);
     dump_radial("Radiation", radiation, 1.0, i_radial, Uranus_vtk_radial_File);
     dump_radial("Emissivity", epsilon, 1.0, i_radial, Uranus_vtk_radial_File);
@@ -306,7 +306,7 @@ void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
     dump_zonal("Q_Sensible", Q_Sensible, 1.0, k_zonal, Uranus_vtk_zonal_File);
 
     // Radiation pair, matching ATJUP and ATSAT. Q_rad in mW/m3, radiation in W/m2;
-    // both identically zero unless ATURAN_RADIATION is set.
+    // both identically zero when ATURAN_RADIATION=0.
     dump_zonal("Q_rad_mW_m3", Q_rad, 1.0e3, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("Radiation", radiation, 1.0, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("Emissivity", epsilon, 1.0, k_zonal, Uranus_vtk_zonal_File);
@@ -398,7 +398,7 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
     dump_longal("Q_Sensible", Q_Sensible, 1.0, j_longal, Uranus_vtk_longal_File);
 
     // Radiation pair, matching ATJUP and ATSAT. Q_rad in mW/m3, radiation in W/m2;
-    // both identically zero unless ATURAN_RADIATION is set.
+    // both identically zero when ATURAN_RADIATION=0.
     dump_longal("Q_rad_mW_m3", Q_rad, 1.0e3, j_longal, Uranus_vtk_longal_File);
     dump_longal("Radiation", radiation, 1.0, j_longal, Uranus_vtk_longal_File);
     dump_longal("Emissivity", epsilon, 1.0, j_longal, Uranus_vtk_longal_File);

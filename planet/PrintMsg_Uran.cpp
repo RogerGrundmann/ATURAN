@@ -86,7 +86,7 @@ void cUranusModel::printMinMax(){
     cout << endl;
 
     // The radiation scheme's own fields, on exactly the argument the precipitation block above
-    // makes: zero unless ATURAN_RADIATION is set, printed regardless, so that switching the knob
+    // makes: zero when ATURAN_RADIATION=0, printed regardless, so that switching the knob
     // on produces something visible. Radiation.h has been filling these three arrays on this model
     // since the port and NOTHING read them — not this file, not ParaView — which is why every
     // number known about ATURAN's radiation so far came from the one stdout line in the shared

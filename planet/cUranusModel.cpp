@@ -56,8 +56,8 @@ using namespace tinyxml2;
 // and the opposite of what ATJUP's comment claimed. ATURAN's `re` is 1000 too. The first thing to
 // do after switching this on is compare nue* against 1/re.
 // Grey multi-layer radiation (RadiationUran), the SHARED Radiation<Planet> that the other three
-// already run. DEFAULT OFF, so every existing ATURAN run stays byte-identical; ATURAN_RADIATION=1
-// switches it on. It fills the DIAGNOSTIC arrays radiation / epsilon / Q_rad and touches neither t
+// already run. DEFAULT ON since 2026-10-11 on the user's word; ATURAN_RADIATION=0 restores the run
+// without it (not byte-checked). It fills the DIAGNOSTIC arrays radiation / epsilon / Q_rad and touches neither t
 // nor any rhs — wiring the heating into the temperature equation is a separate step, as it was on
 // the other three models.
 //
@@ -95,7 +95,7 @@ static int precip_enabled(){
 }
 
 static int radiation_enabled(){
-    static const int v = [](){ const char* e = getenv("ATURAN_RADIATION"); return e ? atoi(e) : 0; }();
+    static const int v = [](){ const char* e = getenv("ATURAN_RADIATION"); return e ? atoi(e) : 1; }();
     return v;
 }
 

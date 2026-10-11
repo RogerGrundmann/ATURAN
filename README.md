@@ -138,7 +138,7 @@ and turbulence remain diagnostic-only here.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `ATURAN_RADIATION` | 0 | run the solve; fills `Q_rad`, `radiation`, `epsilon` |
+| `ATURAN_RADIATION` | 1 | default since 2026-10-11, 0 = off; run the solve; fills `Q_rad`, `radiation`, `epsilon` |
 | `ATURAN_RAD_COUPLING` | 0.0 | add `Q_rad` to `rhs_t` as `Q_rad·L_rad/(ρ·cp·u_0·t_ref)`. **1.0 is the physically correct value, not a starting point** — see *Known limitations* for why it is invisible at that setting and what the sweep measured |
 | `ATURAN_SOLAR` | 1 | absorbed shortwave channel (only acts with `ATURAN_RADIATION`) |
 | `ATURAN_SOLAR_STRENGTH` | 1.0 | scale the absorbed insolation |
@@ -197,7 +197,7 @@ Printed at the `checkpoint` cadence:
   down to the deep boundary. This is the diagnostic that localises profile faults; a column *mean*
   cannot. It found a defect on ATNEPT where the top of the domain sat at 15 bar, which every
   column-averaged number had reported as a confident 17.2287 bar photosphere.
-- **Photosphere line** (with `ATURAN_RADIATION=1`) — mean OLR against the input budget, the τ=1
+- **Photosphere line** (printed unless `ATURAN_RADIATION=0`) — mean OLR against the input budget, the τ=1
   level in bar, and the temperature there beside the blackbody flux it implies. The two temperature
   gaps answer different questions: `T(τ=1) − T_eff(OLR)` is the *scheme's* excess, while
   `T(τ=1) − T_eff(in)` is how far the *column* sits from the planet's energy budget.
