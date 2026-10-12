@@ -76,6 +76,29 @@ void cUranusModel::init_PressureDynamic(){
 
     auto begin = std::chrono::high_resolution_clock::now();
 
+    // ATURAN_PDYN_INIT (2026-10-12): what the dynamic pressure starts from. 1 is the kinetic energy
+    // density of the prescribed wind, which this routine has always written; 0 starts it at zero
+    // and leaves it to the pressure solver -- ATSAT's repair of the same day (ATSAT_PDYN_INIT,
+    // InitVariables_Sat.cpp has the derivation): p_dyn enters the momentum equations through its
+    // gradient, and the radial gradient of that kinetic-energy field is a force nothing balances.
+    // ATJUP has always started p_dyn at zero.
+    // DEFAULT 0 SINCE 2026-10-12 on the user's word (1 restores, byte-identical to 10e724f).
+    // On Uranus the field is built with the local density and is small (max 0.027 bar), and the
+    // force is correspondingly weaker than on Saturn or Neptune, but it is the same force.
+    // MEASURED, 224 iterations, 4 threads, 1 against 0 (ATJUP/satchk/giants/UP1, UP0):
+    //     continuity residuum at iteration 16 / 112 / 224   0.032 / 0.066 / 0.051 -> 0.009 / 0.003 / 0.003
+    //     radial wind at 224                                -1.68 .. +0.66 -> -0.02 .. +0.18 m/s
+    //     H2O / NH3 / H2S column                            -0.38 / -0.10 / -0.02 % -> +0.09 / +0.02 / +0.02 %
+    // v, w and the temperature extrema agree within 0.5 %, the mean OLR is 0.92 W/m2 in both.
+    static const int pdyn_init = [](){ const char* e = getenv("ATURAN_PDYN_INIT"); return e ? atoi(e) : 0; }();
+    if(pdyn_init == 0){
+        for(int i = 0; i < im; i++)
+            for(int j = 0; j < jm; j++)
+                for(int k = 0; k < km; k++) p_dyn.x[i][j][k] = 0.0;
+        cout << "      ATURAN: init_PressureDynamic: p_dyn starts at zero (ATURAN_PDYN_INIT=1 restores the kinetic-energy field)" << endl;
+        return;
+    }
+
     const double coeff = u_0 * u_0 / 6.0 * 1e-5;
 
     #pragma omp parallel for schedule(static) collapse(2)
