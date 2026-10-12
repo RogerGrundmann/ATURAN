@@ -153,6 +153,14 @@ private:
 //              ua_90 = 0.12;   // ~mass-conserving: ua_00 * sin(45°)/(1-sin(45°))
         float ua_00 = 0.03,
               ua_90 = 0.01;   // ~mass-conserving: ua_00 * sin(45°)/(1-sin(45°))
+        // ATURAN_U_INIT_SCALE (2026-10-12; DEFAULT 0 on the user's word, 1 restores): the amplitude
+        // of the prescribed radial branch of the cells, as ATJUP_U_INIT_SCALE and
+        // ATSAT_U_INIT_SCALE. On those two planets the branch peaked at 40 m/s and was the
+        // model's velocity divergence. Here it is small (the amplitudes above are in m/s), and it
+        // is switched off for the same reason and to treat the four models alike: it has no
+        // matching horizontal branch. MEASUREMENT: see the README row of the knob.
+        static const float u_init_scale = [](){ const char* e = getenv("ATURAN_U_INIT_SCALE"); return e ? (float)atof(e) : 0.0f; }();
+        ua_00 *= u_init_scale; ua_90 *= u_init_scale;
         int tropopause_layer = m.get_tropopause_layer(j);
         float tropopause_height = m.get_layer_height(tropopause_layer);
         const int km = m.km;
