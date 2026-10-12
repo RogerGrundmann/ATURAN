@@ -1,5 +1,6 @@
 #include "cUranusModel.h"
 #include "TbUran.h"
+#include "CwbUran.h"        // ATURAN_CWB_DIAG, print-only
 
 using namespace std;
 
@@ -163,6 +164,7 @@ void cUranusModel::RungeKuttaUran(){
         const double c_in = (stage == 0 || stage == 1) ? 0.5 * dt : (stage == 2 ? dt : 0.0);
         const double wgt  = (stage == 0 || stage == 3) ? 1.0 : 2.0;
         UranTb::st().stage_wgt = wgt;                 // ATURAN_TB_DIAG: weight of the tendencies RHSUran is about to sum
+        UranCwb::st().stage_wgt = wgt;                // ATURAN_CWB_DIAG: the same weight
 
         // Tells RHSUran which stage it is inside, so item 1's budget instrument can record the
         // decomposition at stage 0 only — the evaluation at y_n. Read-only in the loop below.

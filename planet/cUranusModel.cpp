@@ -12,6 +12,7 @@
 
 #include "cUranusModel.h"
 #include "TbUran.h"
+#include "CwbUran.h"        // ATURAN_CWB_DIAG, print-only
 
 #include "ChemistryUran.h"
 #include "PressureSolverUran.h"
@@ -616,6 +617,51 @@ void cUranusModel::Run(){
         tb_last = tb_first = tb_lev(t);
     }
 
+    // ATURAN_CWB_DIAG=<n> (print-only, see CwbUran.h): the H2O, NH3, CH4 and H2S columns after
+    // every stage of the loop that can write them, charged to that stage, in g/m2; printed every
+    // n iterations. The stages are the ones ATURAN_TB_DIAG marks.
+    static const int cwb_every = [](){ const char* e = getenv("ATURAN_CWB_DIAG"); return e ? atoi(e) : 0; }();
+    const bool cwb_on = cwb_every > 0;
+    UranCwb::st().on = cwb_on;
+    static const char* cw_gas[UranCwb::NGAS] = { "H2O", "NH3", "CH4", "H2S" };
+    static const char* cw_name[TB_N] = { "before the adjustment (pressure)", "SaturationAdjustment (all calls)",
+        "Precipitation (in place)", "scalar sync, chemistry, forces, radiation", "RungeKutta: reset to the n-level copies",
+        "RungeKutta: floor, limiters and remainder", "boundary conditions", "clampNegativeSpecies", "turbulence, convective adjustment, filters" };
+    static const char* cw_term[UranCwb::NTERM] = { "RungeKutta: radial transport   -u dq/dr", "RungeKutta: meridional transport",
+        "RungeKutta: zonal transport", "RungeKutta: diffusion", "RungeKutta: chemistry source", "(reference, not a term) q*div(u)" };
+    Array* cw_f[UranCwb::NGAS][3]  = { { &h2o,  &h2o_cloud,  &h2o_ice  }, { &nh3,  &nh3_cloud,  &nh3_ice  }, { &ch4,  &ch4_cloud,  &ch4_ice  }, { &h2s,  &h2s_cloud,  &h2s_ice  } };
+    Array* cw_fn[UranCwb::NGAS][3] = { { &h2on, &h2o_cloudn, &h2o_icen }, { &nh3n, &nh3_cloudn, &nh3_icen }, { &ch4n, &ch4_cloudn, &ch4_icen }, { &h2sn, &h2s_cloudn, &h2s_icen } };
+    double cw_sum[UranCwb::NGAS][TB_N] = {{0.0}}, cw_tsum[UranCwb::NGAS][UranCwb::NTERM] = {{0.0}};
+    double cw_norm = 0.0, cw_last[UranCwb::NGAS] = {0.0}, cw_first[UranCwb::NGAS] = {0.0}, cw_first0[UranCwb::NGAS] = {0.0};
+    // i_hi = 0: every level with a thickness; i_hi = 1: the plane i = 0 alone.
+    auto cwb_col = [&](Array* f[3], int i_hi) -> double {
+        double s_ = 0.0;
+        const int ie = i_hi > 0 ? i_hi : im;
+        #pragma omp parallel for collapse(2) schedule(static) reduction(+:s_)
+        for(int k = 0; k < km; k++){
+            for(int j = 0; j < jm; j++){
+                const double sj = std::sin(the.z[j]);
+                for(int i = 0; i < ie; i++){
+                    const double dz = layer_thickness_m(i);
+                    if(dz > 0.0) s_ += sj * dz * (f[0]->x[i][j][k] + f[1]->x[i][j][k] + f[2]->x[i][j][k]);
+                }
+            }
+        }
+        return s_ * 1.0e3 / cw_norm; };
+    auto cwb_mark = [&](int stage){
+        if(!cwb_on) return;
+        for(int g_ = 0; g_ < UranCwb::NGAS; g_++){
+            const double w_ = cwb_col(cw_f[g_], 0);
+            cw_sum[g_][stage] += w_ - cw_last[g_]; cw_last[g_] = w_;
+        } };
+    if(cwb_on){
+        for(int j = 0; j < jm; j++) cw_norm += std::sin(the.z[j]) * km;
+        for(int g_ = 0; g_ < UranCwb::NGAS; g_++){
+            cw_last[g_] = cw_first[g_] = cwb_col(cw_f[g_], 0);
+            cw_first0[g_] = cwb_col(cw_f[g_], 1);
+        }
+    }
+
     for(iter_n = 1; iter_n <= nm; iter_n++){
 
         tattribBegin();   // no-op unless ATURAN_TATTRIB is set
@@ -636,7 +682,7 @@ void cUranusModel::Run(){
             if(press_solver_shared()) PressureSolver<cUranusModel>(*this).run();
             else                      PressureSolverUran(*this).run();
             AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
-            tb_mark(TB_PRE);
+            tb_mark(TB_PRE); cwb_mark(TB_PRE);
             tattrib("pressure+damp");
 
             SaturationAdjustmentUran(*this).run("H2O",
@@ -670,9 +716,9 @@ void cUranusModel::Run(){
             tattrib("SaturationAdjust");
 
             // Must follow the saturation adjustments: it removes condensate in place.
-            tb_mark(TB_SATADJ);
+            tb_mark(TB_SATADJ); cwb_mark(TB_SATADJ);
             if(precip_enabled()) PrecipitationUran(*this).run();
-            tb_mark(TB_PRECIP);
+            tb_mark(TB_PRECIP); cwb_mark(TB_PRECIP);
 
             // ATURAN_RK_SCALAR_SYNC=<0|1|2> (2026-10-11; DEFAULT 2 on the user's word, 0 restores):
             // ATJUP's repair of 2026-10-08, as ported to ATSAT the same day. RungeKuttaUran
@@ -729,7 +775,7 @@ void cUranusModel::Run(){
             tattrib("Forces");
             Latent_Heat();
             tattrib("Latent_Heat");
-            tb_mark(TB_PHYS);
+            tb_mark(TB_PHYS); cwb_mark(TB_PHYS);
 
         }  // if loop
 
@@ -740,7 +786,31 @@ void cUranusModel::Run(){
                 for(int i = 0; i < im; i++) UranTb::st().acc[t_][q_][i] = 0.0;
         }
 
+        double cw_n[UranCwb::NGAS] = {0.0};
+        if(cwb_on){
+            for(int g_ = 0; g_ < UranCwb::NGAS; g_++) cw_n[g_] = cwb_col(cw_fn[g_], 0);    // what the step starts from
+            for(int t_ = 0; t_ < UranCwb::MAXTHR; t_++) for(int g_ = 0; g_ < UranCwb::NGAS; g_++)
+                for(int q_ = 0; q_ < 8; q_++) UranCwb::st().acc[t_][g_][q_] = 0.0;
+        }
+
         RungeKuttaUran();
+
+        if(cwb_on){
+            for(int g_ = 0; g_ < UranCwb::NGAS; g_++){
+                const double w_ = cwb_col(cw_f[g_], 0);
+                double step_terms = 0.0;
+                for(int q_ = 0; q_ < UranCwb::NTERM; q_++){
+                    double a_ = 0.0;
+                    for(int t_ = 0; t_ < UranCwb::MAXTHR; t_++) a_ += UranCwb::st().acc[t_][g_][q_];
+                    a_ *= dt / 6.0 * 1.0e3 / cw_norm;
+                    cw_tsum[g_][q_] += a_;
+                    if(q_ != UranCwb::T_QDIV) step_terms += a_;
+                }
+                cw_sum[g_][TB_RK_RESET] += cw_n[g_] - cw_last[g_];
+                cw_sum[g_][TB_RK_REST]  += w_ - cw_n[g_] - step_terms;
+                cw_last[g_] = w_;
+            }
+        }
 
         if(tb_on){
             const std::vector<double> w_ = tb_lev(t);
@@ -798,9 +868,9 @@ void cUranusModel::Run(){
         BC_Uran(*this).bcRadius();                                      // extrapolation in i-direction along grid boundaries
         BC_Uran(*this).bcTheta();                                       // extrapolation in j-direction along grid boundaries
         BC_Uran(*this).bcPhi();                                         // extrapolation in k-direction along grid boundaries
-        tb_mark(TB_BC);
+        tb_mark(TB_BC); cwb_mark(TB_BC);
         clampNegativeSpecies();                                         // ATURAN_SPECIES_CLAMP, default on (BC_Uran.h)
-        tb_mark(TB_CLAMP);
+        tb_mark(TB_CLAMP); cwb_mark(TB_CLAMP);
         tattrib("BoundaryConds");
 
         // How far the run is from a steady state, and WHERE. MUST run BEFORE restoreVar: it
@@ -823,7 +893,7 @@ void cUranusModel::Run(){
         if(radiation_enabled()) RadiationUran(*this).run();
         if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
-        tb_mark(TB_AFTER);
+        tb_mark(TB_AFTER); cwb_mark(TB_AFTER);
         if(tb_on && iter_n % tb_every == 0){
             static const int lv_[] = { 0, 1, 2, 3, 5, 8, 12, 16, 20, 24, 28, 32, 35, 37, 38, 39, 40 };
             const int nl_ = (int)(sizeof(lv_) / sizeof(lv_[0]));
@@ -845,6 +915,26 @@ void cUranusModel::Run(){
         }
 
         tattrib("Rad/Turb/ConvAdj");
+
+        if(cwb_on && iter_n % cwb_every == 0){
+            for(int g_ = 0; g_ < UranCwb::NGAS; g_++){
+                double sum_ = 0.0;
+                printf("\n      ATURAN: [CWB] %s column (vapour+cloud+ice), cumulative over iterations 1..%d, g/m2:  start %.9e  now %.9e  change %+.6e (%+.4f %%)\n",
+                       cw_gas[g_], iter_n, cw_first[g_], cw_last[g_], cw_last[g_] - cw_first[g_], 100.0 * (cw_last[g_] / cw_first[g_] - 1.0));
+                const double p0_ = cwb_col(cw_f[g_], 1) - cw_first0[g_], in_ = (cw_last[g_] - cw_first[g_]) - p0_;
+                printf("      ATURAN: [CWB] %s   of the change: plane i=0 (set by bcRadius) %+.6e, integrated cells i>=1 %+.6e (%+.4f %% of their start)\n",
+                       cw_gas[g_], p0_, in_, 100.0 * in_ / (cw_first[g_] - cw_first0[g_]));
+                for(int q_ = 0; q_ < TB_N; q_++){
+                    printf("      ATURAN: [CWB] %s   %-46s %+.6e\n", cw_gas[g_], cw_name[q_], cw_sum[g_][q_]); sum_ += cw_sum[g_][q_];
+                    if(q_ == TB_RK_RESET)
+                        for(int r_ = 0; r_ < UranCwb::NTERM; r_++){
+                            printf("      ATURAN: [CWB] %s   %-46s %+.6e\n", cw_gas[g_], cw_term[r_], cw_tsum[g_][r_]);
+                            if(r_ != UranCwb::T_QDIV) sum_ += cw_tsum[g_][r_];
+                        }
+                }
+                printf("      ATURAN: [CWB] %s   %-46s %+.6e\n", cw_gas[g_], "unattributed", cw_last[g_] - cw_first[g_] - sum_);
+            }
+        }
 
         panorama_cnt++;
 
