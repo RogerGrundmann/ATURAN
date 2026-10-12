@@ -346,7 +346,12 @@ public:
     // Every hardening knob is OFF, because on Uranus none of them has been measured.
     static int bc_margin(){ return 0; }
     static int bc_default_form(){ return BCForm::NEUMANN; }
-    static int bc_default_rigid_lid(){ return 0; }
+    // RIGID LID DEFAULT 1 SINCE 2026-10-12 on the user's word, as on ATJUP and ATSAT
+    // (ATURAN_BC_RIGID_LID=0 restores; the same knob sets the pressure solver's wall condition,
+    // press_rigid_lid()). The shell is closed, so the wall-normal velocity is zero on both radial
+    // planes; the extrapolated value it replaces admitted a mass flux through the lid. The README
+    // row of the knob has the measurement.
+    static int bc_default_rigid_lid(){ return 1; }
     static int bc_default_top_taper(){ return 0; }
     static int bc_default_pole_copy(){ return 0; }
     static int bc_default_radius_copy(){ return 0; }
@@ -432,7 +437,7 @@ public:
     // Whether the projection treats the radial walls as a rigid lid — u = 0 there rather than
     // extrapolated. False keeps ATURAN's existing open boundaries. ATSAT and ATNEPT answer false
     // too; the knob that turns it on for ATSAT is a separate, still-unsettled question.
-    static bool press_rigid_lid(){ return false; }
+    static bool press_rigid_lid(){ return true; }    // 2026-10-12, with bc_default_rigid_lid()
 
     // ATURAN does not stretch the radial coordinate, so the solver's exp_rm factor stays 1.
     // ATJUP's coord_stretching forms 1/(rm+1), which only makes sense while rad.z starts at 1.
