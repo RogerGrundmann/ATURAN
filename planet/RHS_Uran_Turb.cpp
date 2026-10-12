@@ -833,6 +833,46 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + chemical_reaction * massflux_nh4sh.x[i][j][k]
         + (v_stokes_nh4sh / u_0) * dnh4shdr;
 
+    // ATURAN_SPECIES_DIVU=<s> (2026-10-12), DEFAULT 0 = OFF (block skipped, byte-identical): the
+    // flux form of the species transport, ATJUP's and ATSAT's knob. Every species here is a
+    // DENSITY [kg/m3], so its conservation law is dq/dt = -div(q u) = -u.grad q - q div(u), and
+    // the transport above is the first half alone. <s> scales the missing half, -s * q * div(u),
+    // on all thirteen species; the temperature is not a density and keeps the advective form.
+    // On ATSAT it closed the H2O and NH3 columns but not CH4 (224 iterations); not measured here.
+    static const double species_divu = [](){ const char* e = getenv("ATURAN_SPECIES_DIVU"); return e ? atof(e) : 0.0; }();
+    if(species_divu != 0.0){
+        const double sd = species_divu * (dudr + 2.0 * u_ijk * inv_rm + dvdthe * inv_rm
+                                          + v_ijk * cotanthe * inv_rm + dwdphi * inv_rmsinthe);
+        if(UranCwb::st().on){
+            const double dz_cwb = layer_thickness_m(i);
+            if(dz_cwb > 0.0){
+                #ifdef _OPENMP
+                    const int th_ = omp_get_thread_num();
+                #else
+                    const int th_ = 0;
+                #endif
+                const double cw = UranCwb::st().stage_wgt * std::sin(the.z[j]) * dz_cwb * sd;
+                UranCwb::st().acc[th_][UranCwb::G_H2O][UranCwb::T_DIVU] -= cw * (h2o.x[i][j][k] + h2o_cloud.x[i][j][k] + h2o_ice.x[i][j][k]);
+                UranCwb::st().acc[th_][UranCwb::G_NH3][UranCwb::T_DIVU] -= cw * (nh3.x[i][j][k] + nh3_cloud.x[i][j][k] + nh3_ice.x[i][j][k]);
+                UranCwb::st().acc[th_][UranCwb::G_CH4][UranCwb::T_DIVU] -= cw * (ch4.x[i][j][k] + ch4_cloud.x[i][j][k] + ch4_ice.x[i][j][k]);
+                UranCwb::st().acc[th_][UranCwb::G_H2S][UranCwb::T_DIVU] -= cw * (h2s.x[i][j][k] + h2s_cloud.x[i][j][k] + h2s_ice.x[i][j][k]);
+            }
+        }
+        rhs_h2o.x[i][j][k]        -= sd * h2o.x[i][j][k];
+        rhs_h2o_cloud.x[i][j][k]  -= sd * h2o_cloud.x[i][j][k];
+        rhs_h2o_ice.x[i][j][k]    -= sd * h2o_ice.x[i][j][k];
+        rhs_h2s.x[i][j][k]        -= sd * h2s.x[i][j][k];
+        rhs_h2s_cloud.x[i][j][k]  -= sd * h2s_cloud.x[i][j][k];
+        rhs_h2s_ice.x[i][j][k]    -= sd * h2s_ice.x[i][j][k];
+        rhs_nh3.x[i][j][k]        -= sd * nh3.x[i][j][k];
+        rhs_nh3_cloud.x[i][j][k]  -= sd * nh3_cloud.x[i][j][k];
+        rhs_nh3_ice.x[i][j][k]    -= sd * nh3_ice.x[i][j][k];
+        rhs_ch4.x[i][j][k]        -= sd * ch4.x[i][j][k];
+        rhs_ch4_cloud.x[i][j][k]  -= sd * ch4_cloud.x[i][j][k];
+        rhs_ch4_ice.x[i][j][k]    -= sd * ch4_ice.x[i][j][k];
+        rhs_nh4sh.x[i][j][k]      -= sd * nh4sh.x[i][j][k];
+    }
+
     /*
      * k* and dis* become PROGNOSTIC here — stage two of the turbulence port.
      *

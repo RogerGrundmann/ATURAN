@@ -23,6 +23,8 @@
  * q*div(u) is accumulated beside them and NOT applied: the transport is written in advective
  * form, and -u.grad q = -div(q u) + q div(u), so on a closed column the advective form creates or
  * destroys exactly the integral of q*div(u). Printed so the two can be compared.
+ * With ATURAN_SPECIES_DIVU set the term IS applied (RHS_Uran_Turb.cpp) and appears as its own row,
+ * "flux-form term -s q div(u)"; the not-applied row stays as the reference.
  *
  * Unit: g/m2, the mean over the sphere weighted by sin(colatitude), layer thickness in metres on
  * densities in kg/m3 -- the same sum the saturation adjustment's instrument prints. The top level
@@ -38,7 +40,7 @@
 namespace UranCwb {
 
     enum { G_H2O = 0, G_NH3, G_CH4, G_H2S, NGAS };
-    enum { T_RAD = 0, T_THE, T_PHI, T_DIFF, T_CHEM, T_PRECIP, T_QDIV, NTERM };
+    enum { T_RAD = 0, T_THE, T_PHI, T_DIFF, T_CHEM, T_PRECIP, T_DIVU, T_QDIV, NTERM };
     const int MAXTHR = 256;
 
     struct State {

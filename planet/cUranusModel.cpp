@@ -636,7 +636,7 @@ void cUranusModel::Run(){
         "RungeKutta: floor, limiters and remainder", "boundary conditions", "clampNegativeSpecies", "turbulence, convective adjustment, filters" };
     static const char* cw_term[UranCwb::NTERM] = { "RungeKutta: radial transport   -u dq/dr", "RungeKutta: meridional transport",
         "RungeKutta: zonal transport", "RungeKutta: diffusion", "RungeKutta: chemistry source", "RungeKutta: precipitation source",
-        "(reference, not a term) q*div(u)" };
+        "RungeKutta: flux-form term  -s q div(u)", "(reference, not a term) q*div(u)" };
     Array* cw_f[UranCwb::NGAS][3]  = { { &h2o,  &h2o_cloud,  &h2o_ice  }, { &nh3,  &nh3_cloud,  &nh3_ice  }, { &ch4,  &ch4_cloud,  &ch4_ice  }, { &h2s,  &h2s_cloud,  &h2s_ice  } };
     Array* cw_fn[UranCwb::NGAS][3] = { { &h2on, &h2o_cloudn, &h2o_icen }, { &nh3n, &nh3_cloudn, &nh3_icen }, { &ch4n, &ch4_cloudn, &ch4_icen }, { &h2sn, &h2s_cloudn, &h2s_icen } };
     double cw_sum[UranCwb::NGAS][TB_N] = {{0.0}}, cw_tsum[UranCwb::NGAS][UranCwb::NTERM] = {{0.0}};
@@ -946,13 +946,19 @@ void cUranusModel::Run(){
 
         panorama_cnt++;
 
+        // ATURAN_VTK_STRIDE=<n> (2026-10-12, ATJUP's and ATSAT's knob): write the VTK files every n
+        // iterations instead of at every checkpoint, so the printed extrema can stay dense while
+        // the files do not. Default 0 = follow `checkpoint`, as before. This model writes no
+        // periodic restart files, so there is no restart stride to go with it.
+        static const int vtk_stride = [](){
+            const char* e = getenv("ATURAN_VTK_STRIDE"); return e ? atoi(e) : 0; }();
         if(iter_n % checkpoint == 0){
             printMinMax();
             printMeridionalBudget();         // no-op unless ATURAN_VBUDGET is set
             printTemperatureBudget();        // no-op unless ATURAN_TBUDGET is set
             printTemperatureAttribution();   // no-op unless ATURAN_TATTRIB is set
-            writeData();
         }
+        if(vtk_stride > 0 ? (iter_n % vtk_stride == 0) : (iter_n % checkpoint == 0)) writeData();
 
         if(panorama_cnt == panorama_print) panorama_cnt = 0;
 
