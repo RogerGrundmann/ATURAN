@@ -34,11 +34,15 @@ void cUranusModel::init_temperature(){
 
             const double T_top    = t_eff * (d_j * d_j/(d_j_half * d_j_half)
                 - 2.0 * d_j/d_j_half) + t_pole;                         // K at i=im-1
-            const double T_bottom = T_top + gam * L_atm;  // K at i=0
+            // ATURAN_T_INIT_ANCHOR=1: the adiabat through t_1bar_K() at 1 bar, the same at
+            // every latitude, isothermal at T_top above the level where it has cooled to T_top.
+            const bool anchor = t_init_anchor() != 0;
+            const double T_bottom = anchor ? t_bottom_anchor_K() : T_top + gam * L_atm;  // K at i=0
 
             for(int i = 0; i < im; i++){
                 height = get_layer_height(i);                           // km
                 t.x[i][j][k] = (T_bottom - gam * height) / t_ref;
+                if(anchor) t.x[i][j][k] = std::max(T_bottom - gam * height, T_top) / t_ref;
 
 /*
     cout.precision(10);
@@ -107,9 +111,20 @@ void cUranusModel::init_PressureStatic(){
     for(int k = 0; k < km; k++){
         for(int j = 0; j < jm; j++){
             const double p_bottom = r_mix * R_mix * t.x[0][j][k] * t_ref * 1e-5;  // highest static pressure
+            // ATURAN_T_INIT_ANCHOR=1: above the level where the adiabat has cooled to the top
+            // temperature the layer is isothermal, and its pressure is the hydrostatic one of an
+            // isothermal layer (same gas constant as the exponent). r_mix has been scaled to the
+            // anchored bottom state by then, so p_bottom IS p_bottom_bar().
+            const bool anchor = t_init_anchor() != 0;
+            const double T_bottom = t.x[0][j][k] * t_ref;
+            const double T_top    = t.x[im-1][j][k] * t_ref;
+            const double h_trop   = (T_bottom - T_top) / gam;           // km
+            const double p_trop   = p_bottom * pow(T_top / T_bottom, exp_pressure);
             for(int i = 0; i < im; i++){
                 p_stat.x[i][j][k] = p_bottom
                     * pow(t.x[i][j][k] / t.x[0][j][k], exp_pressure);
+                if(anchor && get_layer_height(i) > h_trop)
+                    p_stat.x[i][j][k] = p_trop * exp(-(get_layer_height(i) - h_trop) * g / (R_ref * T_top));
             }
         }
     }

@@ -19,9 +19,9 @@ void cUranusModel::SetDefaultConfig() {
   chemical_reaction = 1;
   epsres = 1e-05;
   turb_model = "k_omega_SST";
-  L_atm = 360.0;
-  tropopause_pole = 125.0;
-  tropopause_equator = 115.0;
+  L_atm = 225.0;
+  tropopause_pole = 200.0;
+  tropopause_equator = 188.0;
   re = 1000.0;
   ec = 0.00044;
   ep = 0.623;

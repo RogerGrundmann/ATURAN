@@ -22,7 +22,7 @@ by Imke de Pater and Jack J. Lissauer was indispensable.
 ## Physics & Numerics
 
 - **Domain:** spherical shell, 41 × 181 × 361 grid points (r × θ × φ), ~2.7 million cells
-- **Vertical extent:** 360 km atmospheric shell (~9 km per radial step)
+- **Vertical extent:** 225 km atmospheric shell (5.6 km per radial step), 17.3 bar to 0.10-0.14 bar; 360 km before 2026-10-12
 - **Dynamics:** finite-difference discretisation of the 3-D Navier-Stokes equations in spherical coordinates
 - **Time integration:** 4th-order Runge-Kutta (inner loop) with a Poisson pressure solver (outer loop)
 - **Parallelism:** OpenMP shared-memory threading
@@ -161,6 +161,7 @@ and turbulence remain diagnostic-only here.
 
 | Variable | Default | Effect |
 |----------|---------|--------|
+| `ATURAN_T_INIT_ANCHOR` | 1 | since 2026-10-12: the initial profile is ONE adiabat through 76 K at 1 bar from `ATURAN_P_BOTTOM` (17.3 bar, 249.0 K) upwards, isothermal at `t_equator`..`t_pole` above the level where it reaches them; the reference densities are scaled by one factor (1.69) to that bottom state. The config defaults went with it: `L_atm` 360 → 225 km, `tropopause_pole` 125 → 200, `tropopause_equator` 115 → 188. `0` **together with those three old values** restores the profile before (399.5 K at 17.3 bar at the equator) |
 | `ATURAN_THERMAL_MASSFLUX` | 0.0 since 2026-10-11 (was 1.0) | scale the diffusive-enthalpy sink in `rhs_t` — see *Known limitations* |
 | `ATURAN_RK_SCALAR_SYNC` | 2 | since 2026-10-11: the Runge-Kutta step starts from the state the saturation adjustment left (2 = condensate and temperature, 1 = condensate only, 0 = before: both discarded every step) |
 | `ATURAN_TB_DIAG=<n>` | off | print-only: every n iterations, which stage of the loop and which term of `rhs_t` changed the level-mean temperature (`planet/TbUran.h`) |
@@ -302,6 +303,11 @@ radial, zonal, and longitudinal cross-sections).
 
 ## Known limitations
 
+> **State of 2026-10-12 — the initial profile changed.** `ATURAN_T_INIT_ANCHOR` 1 and a 225 km shell are the
+> default (see the knob table). Every number below, and the note of 2026-10-11 that follows, was measured on the
+> 360 km profile that reached 399.5 K. On the new one: bottom 249.0 K at 17.3 bar, lid 0.10 bar (poles) to
+> 0.14 bar (equator), mean OLR at start-up **0.92 W/m² against 0.689 in** (1.44 before).
+>
 > **State of 2026-10-11 — read this before the numbered items.** Three defaults changed that day and
 > the items below were measured before them: `ATURAN_DAMP_T_VERT` 0 (the vertical pass of the Shapiro
 > filter on `t` is off), `ATURAN_THERMAL_MASSFLUX` 0 (the diffusive-enthalpy term is out of `rhs_t`) and

@@ -426,6 +426,30 @@ void cUranusModel::Run(){
     ChemistryUran(*this).ThermalPropertiesUran();
     gam = g * 1.0e3 / cp_mix;                                           // dry adiabatic lapse rate [K/km]: g[m/s²]*1000 / cp[J/(kg·K)]
 
+    // ATURAN_T_INIT_ANCHOR=1 (cUranusModel.h has the note): the reference densities follow the
+    // anchored bottom state, one factor on all of them, so that r_mix * R_mix * T_bottom is the
+    // bottom pressure. cp_mix, R_mix, mue_mix, k_mix and gam are ratios and stay.
+    if(t_init_anchor() != 0){
+        const double T_bottom = t_bottom_anchor_K();
+        const double f = p_bottom_bar() * 1.0e5 / (R_mix * T_bottom) / r_mix;
+        r_h2 *= f; r_he *= f; r_ch4 *= f; r_nh3 *= f; r_h2s *= f; r_h2o *= f; r_nh4sh *= f;
+        c_h2 *= f; c_he *= f; c_ch4 *= f; c_nh3 *= f; c_h2s *= f; c_h2o *= f; c_nh4sh *= f;
+        r_mix *= f; c_mix *= f;
+        const double n = g / (gam * R_ref);
+        printf("      ATURAN: T_INIT_ANCHOR: adiabat through %.1f K at 1 bar, n = %.4f; bottom %.2f K at %.2f bar;"
+               " reference densities x %.4f (r_mix %.4f kg/m3); L_atm %.1f km\n",
+               t_1bar_K(), n, T_bottom, p_bottom_bar(), f, r_mix, L_atm);
+        for(int e = 0; e < 2; e++){
+            const double T_tr = e == 0 ? t_equator : t_pole;
+            const double h_tr = (T_bottom - T_tr) / gam;
+            const double p_tr = p_bottom_bar() * std::pow(T_tr / T_bottom, n);
+            const double p_lid = L_atm > h_tr ? p_tr * std::exp(-(L_atm - h_tr) * g / (R_ref * T_tr))
+                                              : p_bottom_bar() * std::pow((T_bottom - gam * L_atm) / T_bottom, n);
+            printf("      ATURAN: T_INIT_ANCHOR: %s: isothermal at %.1f K above %.1f km (%.4f bar); lid at %.4e bar\n",
+                   e == 0 ? "equator" : "pole   ", T_tr, h_tr, p_tr, p_lid);
+        }
+    }
+
     init_temperature();
     init_PressureStatic();
 

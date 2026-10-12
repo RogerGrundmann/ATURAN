@@ -48,13 +48,13 @@ def main():
 #            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'k_epsilon'),
 #            ('turb_model', 'turbulence model: none, k_epsilon, k_omega, k_omega_SST', 'string', 'none'),
 
-            ('L_atm', 'extension of the troposhere in km, 360km/40 steps = 9km', 'double', 360.0),
+            ('L_atm', 'extension of the atmosphere shell in km, 225km/40 steps = 5.6km (360 before 2026-10-12, with ATURAN_T_INIT_ANCHOR=0)', 'double', 225.0),
 
 #            ('tropopause_pole', 'extension of the troposphere at the poles in km', 'double', 115.0),
 #            ('tropopause_equator', 'extension of the troposphere at the equator in km', 'double', 125.0),
 
-            ('tropopause_pole', 'extension of the troposphere at the poles in km', 'double', 125.0),
-            ('tropopause_equator', 'extension of the troposphere at the equator in km', 'double', 115.0),
+            ('tropopause_pole', 'extension of the troposphere at the poles in km (125 before 2026-10-12)', 'double', 200.0),
+            ('tropopause_equator', 'extension of the troposphere at the equator in km (115 before 2026-10-12)', 'double', 188.0),
 
             ('re', 'Reynolds number: ratio viscous to inertia forces, Re = u * L/nue', 'double', 1000.0),
             ('ec', 'Eckert number: ratio kinetic energy to enthalpy, Ec = u²/cp T', 'double', 0.00044),

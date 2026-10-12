@@ -101,7 +101,37 @@ public:
      * If the initial profile is wrong, these constants should not be the thing hiding it.
      */
     static double t_min_K(){ return 7.5;    }   // floor; prevents a buoyancy blow-up
-    static double t_max_K(){ return 2000.0; }   // ceiling; well clear of the 421 K init_temperature builds
+    static double t_max_K(){ return 2000.0; }   // ceiling; well clear of anything init_temperature builds (249 K; 421 K before 2026-10-12)
+
+    // ---- ATURAN_T_INIT_ANCHOR (2026-10-12; DEFAULT 1 on the user's word, 0 = the profile as before) ----
+    //
+    // ATNEPT's knob of the same name, where the note is (cNeptuneModel.h). The initial profile
+    // hangs one dry adiabat from the prescribed top temperature through the whole shell and
+    // takes the bottom pressure from the reference density: 399.5 K at 17.3 bar at the equator
+    // with L_atm = 360 km. Uranus has 76 K at 1 bar (Lindal 1987); the adiabat through that
+    // point is at about 232 K at 17.3 bar.
+    //
+    // 1 builds the profile from the anchor: one adiabat for every latitude through t_1bar_K()
+    // at 1 bar up from p_bottom_bar(), isothermal at the prescribed top temperature
+    // (t_equator .. t_pole) above the level where the adiabat has cooled to it, and the seven
+    // reference densities scaled by one factor so that p_bottom = r_mix * R_mix * T_bottom
+    // holds. L_atm stays the config's and has to fit: the start-up line prints the lid pressure.
+    // The config defaults went with the flip: L_atm 360 -> 225 km (lid at 0.10 .. 0.14 bar),
+    // tropopause_pole 125 -> 200, tropopause_equator 115 -> 188; the old model is the knob at 0
+    // TOGETHER WITH those three old values.
+    static int t_init_anchor(){
+        static const int v = [](){ const char* e = getenv("ATURAN_T_INIT_ANCHOR"); return e ? atoi(e) : 1; }();
+        return v;
+    }
+    static double t_1bar_K(){ return 76.0; }    // Voyager 2 radio occultation, Lindal (1987)
+    static double p_bottom_bar(){
+        static const double v = [](){ const char* e = getenv("ATURAN_P_BOTTOM"); return e ? atof(e) : 17.3; }();
+        return v;
+    }
+    // Bottom temperature [K] of the anchored profile; needs gam (cUranusModel.cpp sets it).
+    double t_bottom_anchor_K() const {
+        return t_1bar_K() * std::pow(p_bottom_bar(), gam * R_ref / g);
+    }
 
     // ---- RK4 stage accumulators, for the separated integrator ----
     //
@@ -928,6 +958,11 @@ private:
     double out_minValue() const;
 
     void init_layer_heights(){
+        // Called twice: by the constructor with the compiled L_atm and by Run() with the
+        // config's. Without the clear the second call only APPENDED, so get_layer_height()
+        // and layer_thickness_m() kept the compiled 360 km whatever the config said (found
+        // 2026-10-12 on ATNEPT; no difference while the config has the compiled value).
+        m_layer_heights.clear();
         float h = L_atm/(im-1);
         for(int i=0; i<im; i++){
             m_layer_heights.push_back(i * h);
