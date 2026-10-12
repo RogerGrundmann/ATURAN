@@ -161,9 +161,15 @@ public:
 
     void run();
 
+    // PUBLIC since 2026-10-12: a model with a condensable beyond H2O / NH3 / CH4 runs it through
+    // the same column solver from its hook m.precip_extra_species(*this) -- H2S on ATNEPT and
+    // ATURAN, which carry h2s_cloud and h2s_ice. ATJUP and ATSAT have no such fields; their
+    // three hooks (precip_extra_species, precip_extra_surface, precip_extra_diag) are empty, and
+    // their output is unchanged.
+    void column(const Species& s);        // one species, three-category
+
 private:
     Planet& m;
-    void column(const Species& s);        // one species, three-category
     void sedimentNH4SH();                 // NH4SH crystal Stokes settling
     void surfaceMap();                    // all-species 2D surface precipitation map
 };
@@ -247,6 +253,9 @@ inline void Precipitation<Planet>::run(){
     ch4.S_v = &m.S_precip_ch4; ch4.S_c = &m.S_precip_ch4_cloud; ch4.S_i = &m.S_precip_ch4_ice;
     check_phase_order(Planet::planet_tag(), "CH4", ch4.t_frz, ch4.t_low);
     column(ch4);
+
+    // --- any further condensable of this model (see the note at column() in the class) ---
+    m.precip_extra_species(*this);
 
     // --- NH4SH crystal sedimentation ---
     sedimentNH4SH();
@@ -483,6 +492,9 @@ inline void Precipitation<Planet>::surfaceMap(){
         }
     }
 
+    // surface map of the model's further condensables, added to precip_srf_total there
+    m.precip_extra_surface();
+
     if(diag_on()){
         const int im = m.im;
         constexpr double P_cap = 1.0e-4;                 // P_max_flux of column()
@@ -517,7 +529,8 @@ inline void Precipitation<Planet>::surfaceMap(){
             printf("      %s: [PRECIP-DIAG] %s  column-max flux: mean %.4e max %.4e kg/m2/s (%.4f mm/d mean) = %.4e W/m2 latent;  at the surface: mean %.4e;  cells on the cap %ld\n",
                    Planet::planet_tag(), nm_[g], mean_max, top, mean_max * 86400.0, Lv_[g] * mean_max, mean_srf, n_cap);
         }
-        printf("      %s: [PRECIP-DIAG] all three: %.4e W/m2 latent against an emitted flux of %.3f W/m2 = F_int + S(1-A)/4  (PRECIP_SCALE = %g)\n",
+        latent_all += m.precip_extra_diag();             // prints its own line; 0 where there is none
+        printf("      %s: [PRECIP-DIAG] all species: %.4e W/m2 latent against an emitted flux of %.3f W/m2 = F_int + S(1-A)/4  (PRECIP_SCALE = %g)\n",
                Planet::planet_tag(), latent_all, Planet::rad_F_int() + 0.25 * Planet::rad_S_solar() * (1.0 - Planet::rad_albedo_bond()), rate_scale());
     }
 }

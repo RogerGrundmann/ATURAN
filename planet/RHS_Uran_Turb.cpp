@@ -471,12 +471,36 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         }
     }
 
+    // ===== The precipitation coupling (ATURAN_PRECIP_COUPLING, DEFAULT 1.0 since 2026-10-12) =====
+    // ATSAT's coupling, on the user's word. The shared Precipitation.h fills Q_precip [W/m3] and
+    // the S_precip_* rates (already nondimensional); until now nothing here read them, so the
+    // rain fell and the cloud never noticed. The knob gates BOTH halves -- this latent-heat term
+    // and the condensate depletion added to the species equations below -- because the heat a
+    // conversion releases and the mass it moved must enter together. 0 is NOT the state before:
+    // the shared header reads the same knob and with 0 writes the depletion into the fields in
+    // place, a residence time's worth per call. The model before is ATURAN_PRECIP=0.
+    // The density is r_mix, not the local one: the condensate fields are mass
+    // concentrations scaled by the reference density, and the saturation adjustment converts
+    // their latent heat with /(cp_mix * r_mix), so r_mix cancels (the note in ATSAT's
+    // RHS_Sat_Turb.cpp has the argument).
+    static const double precip_coupling = [](){
+        const char* e = getenv("ATURAN_PRECIP_COUPLING"); return e ? atof(e) : 1.0; }();
+    double precip_t = 0.0;
+    if(precip_coupling != 0.0 && r_mix > 0.0 && cp_mix > 0.0){
+        precip_t = precip_coupling * Q_precip.x[i][j][k] * (L_atm * 1.0e3) / (r_mix * cp_mix * u_0 * t_ref);
+        constexpr double precip_t_max = 0.5;
+        if(!std::isfinite(precip_t)) precip_t = 0.0;
+        else if(precip_t >  precip_t_max) precip_t =  precip_t_max;
+        else if(precip_t < -precip_t_max) precip_t = -precip_t_max;
+    }
+
     rhs_t.x[i][j][k] =
         + pressure_t
         - transport_t
         + diffusion_t / (re * pr) + diffusion_t * nue_t_s
         - tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k]
-        + radiation_t;
+        + radiation_t
+        + precip_t;
 
     // ATURAN_TB_DIAG (print-only, see TbUran.h): RK4-weighted level sums of each term of rhs_t, per
     // thread. Nothing here is read by the model.
@@ -495,6 +519,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         a_[UranTb::T_DIFF][i]   += cw * (diffusion_t / (re * pr) + diffusion_t * nue_t_s);
         a_[UranTb::T_TMF][i]    -= cw * tmf_scale * chemical_reaction * thermalmassflux.x[i][j][k];
         a_[UranTb::T_RAD][i]    += cw * radiation_t;
+        a_[UranTb::T_PRECIP][i] += cw * precip_t;
     }
 
     // Item 1's instrument: the same five terms, recorded separately for one column at stage 0.
@@ -685,53 +710,65 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     rhs_ch4.x[i][j][k] =
         - transport_ch4
-        + diffusion_ch4 / (sc_ch4 * re) + diffusion_ch4 * nue_t_s;
+        + diffusion_ch4 / (sc_ch4 * re) + diffusion_ch4 * nue_t_s
+        + precip_coupling * S_precip_ch4.x[i][j][k];
 
     rhs_ch4_cloud.x[i][j][k] =
         - transport_ch4_cloud
-        + diffusion_ch4_cloud / (sc_ch4 * re) + diffusion_ch4_cloud * nue_t_s;
+        + diffusion_ch4_cloud / (sc_ch4 * re) + diffusion_ch4_cloud * nue_t_s
+        + precip_coupling * S_precip_ch4_cloud.x[i][j][k];
 
     rhs_ch4_ice.x[i][j][k] =
         - transport_ch4_ice
-        + diffusion_ch4_ice / (sc_ch4 * re) + diffusion_ch4_ice * nue_t_s;
+        + diffusion_ch4_ice / (sc_ch4 * re) + diffusion_ch4_ice * nue_t_s
+        + precip_coupling * S_precip_ch4_ice.x[i][j][k];
 
     rhs_h2o.x[i][j][k] =
         - transport_h2o
-        + diffusion_h2o / (sc_h2o * re) + diffusion_h2o * nue_t_s;
+        + diffusion_h2o / (sc_h2o * re) + diffusion_h2o * nue_t_s
+        + precip_coupling * S_precip_h2o.x[i][j][k];
 
     rhs_h2o_cloud.x[i][j][k] =
         - transport_h2o_cloud
-        + diffusion_h2o_cloud / (sc_h2o * re) + diffusion_h2o_cloud * nue_t_s;
+        + diffusion_h2o_cloud / (sc_h2o * re) + diffusion_h2o_cloud * nue_t_s
+        + precip_coupling * S_precip_h2o_cloud.x[i][j][k];
 
     rhs_h2o_ice.x[i][j][k] =
         - transport_h2o_ice
-        + diffusion_h2o_ice / (sc_h2o * re) + diffusion_h2o_ice * nue_t_s;
+        + diffusion_h2o_ice / (sc_h2o * re) + diffusion_h2o_ice * nue_t_s
+        + precip_coupling * S_precip_h2o_ice.x[i][j][k];
 
     rhs_h2s.x[i][j][k] =
         - transport_h2s
         + diffusion_h2s / (sc_h2s * re) + diffusion_h2s * nue_t_s
-        + chemical_reaction * massflux_h2s.x[i][j][k];
+        + chemical_reaction * massflux_h2s.x[i][j][k]
+        + precip_coupling * S_precip_h2s.x[i][j][k];
 
     rhs_h2s_cloud.x[i][j][k] =
         - transport_h2s_cloud
-        + diffusion_h2s_cloud / (sc_h2s * re) + diffusion_h2s_cloud * nue_t_s;
+        + diffusion_h2s_cloud / (sc_h2s * re) + diffusion_h2s_cloud * nue_t_s
+        + precip_coupling * S_precip_h2s_cloud.x[i][j][k];
 
     rhs_h2s_ice.x[i][j][k] =
         - transport_h2s_ice
-        + diffusion_h2s_ice / (sc_h2s * re) + diffusion_h2s_ice * nue_t_s;
+        + diffusion_h2s_ice / (sc_h2s * re) + diffusion_h2s_ice * nue_t_s
+        + precip_coupling * S_precip_h2s_ice.x[i][j][k];
 
     rhs_nh3.x[i][j][k] =
         - transport_nh3
         + diffusion_nh3 / (sc_nh3 * re) + diffusion_nh3 * nue_t_s
-        + chemical_reaction * massflux_nh3.x[i][j][k];
+        + chemical_reaction * massflux_nh3.x[i][j][k]
+        + precip_coupling * S_precip_nh3.x[i][j][k];
 
     rhs_nh3_cloud.x[i][j][k] =
         - transport_nh3_cloud
-        + diffusion_nh3_cloud / (sc_nh3 * re) + diffusion_nh3_cloud * nue_t_s;
+        + diffusion_nh3_cloud / (sc_nh3 * re) + diffusion_nh3_cloud * nue_t_s
+        + precip_coupling * S_precip_nh3_cloud.x[i][j][k];
 
     rhs_nh3_ice.x[i][j][k] =
         - transport_nh3_ice
-        + diffusion_nh3_ice / (sc_nh3 * re) + diffusion_nh3_ice * nue_t_s;
+        + diffusion_nh3_ice / (sc_nh3 * re) + diffusion_nh3_ice * nue_t_s
+        + precip_coupling * S_precip_nh3_ice.x[i][j][k];
 
     // Stokes terminal velocity for NH4SH crystals falling in the -r direction.
     // v_stokes [m/s] = (2/9) * r_p² * (rho_crystal - rho_mix) * g / mue_mix
@@ -761,6 +798,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
             a[UranCwb::T_THE]  -= cw * v_invrm * (dh2odthe + dh2ocdthe + dh2oidthe);
             a[UranCwb::T_PHI]  -= cw * w_invrs * (dh2odphi + dh2ocdphi + dh2oidphi);
             a[UranCwb::T_DIFF] += cw * (1.0 / (sc_h2o * re) + nue_t_s) * (diffusion_h2o + diffusion_h2o_cloud + diffusion_h2o_ice);
+            a[UranCwb::T_PRECIP] += cw * precip_coupling * (S_precip_h2o.x[i][j][k] + S_precip_h2o_cloud.x[i][j][k] + S_precip_h2o_ice.x[i][j][k]);
             a[UranCwb::T_QDIV] += cw * (h2o.x[i][j][k] + h2o_cloud.x[i][j][k] + h2o_ice.x[i][j][k]) * div_u;
             a = a_[UranCwb::G_NH3];
             a[UranCwb::T_RAD]  -= cw * u_ijk   * (dnh3dr   + dnh3cdr   + dnh3idr);
@@ -768,12 +806,14 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
             a[UranCwb::T_PHI]  -= cw * w_invrs * (dnh3dphi + dnh3cdphi + dnh3idphi);
             a[UranCwb::T_DIFF] += cw * (1.0 / (sc_nh3 * re) + nue_t_s) * (diffusion_nh3 + diffusion_nh3_cloud + diffusion_nh3_ice);
             a[UranCwb::T_CHEM] += cw * chemical_reaction * massflux_nh3.x[i][j][k];
+            a[UranCwb::T_PRECIP] += cw * precip_coupling * (S_precip_nh3.x[i][j][k] + S_precip_nh3_cloud.x[i][j][k] + S_precip_nh3_ice.x[i][j][k]);
             a[UranCwb::T_QDIV] += cw * (nh3.x[i][j][k] + nh3_cloud.x[i][j][k] + nh3_ice.x[i][j][k]) * div_u;
             a = a_[UranCwb::G_CH4];
             a[UranCwb::T_RAD]  -= cw * u_ijk   * (dch4dr   + dch4cdr   + dch4idr);
             a[UranCwb::T_THE]  -= cw * v_invrm * (dch4dthe + dch4cdthe + dch4idthe);
             a[UranCwb::T_PHI]  -= cw * w_invrs * (dch4dphi + dch4cdphi + dch4idphi);
             a[UranCwb::T_DIFF] += cw * (1.0 / (sc_ch4 * re) + nue_t_s) * (diffusion_ch4 + diffusion_ch4_cloud + diffusion_ch4_ice);
+            a[UranCwb::T_PRECIP] += cw * precip_coupling * (S_precip_ch4.x[i][j][k] + S_precip_ch4_cloud.x[i][j][k] + S_precip_ch4_ice.x[i][j][k]);
             a[UranCwb::T_QDIV] += cw * (ch4.x[i][j][k] + ch4_cloud.x[i][j][k] + ch4_ice.x[i][j][k]) * div_u;
             a = a_[UranCwb::G_H2S];
             a[UranCwb::T_RAD]  -= cw * u_ijk   * (dh2sdr   + dh2scdr   + dh2sidr);
@@ -781,6 +821,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
             a[UranCwb::T_PHI]  -= cw * w_invrs * (dh2sdphi + dh2scdphi + dh2sidphi);
             a[UranCwb::T_DIFF] += cw * (1.0 / (sc_h2s * re) + nue_t_s) * (diffusion_h2s + diffusion_h2s_cloud + diffusion_h2s_ice);
             a[UranCwb::T_CHEM] += cw * chemical_reaction * massflux_h2s.x[i][j][k];
+            a[UranCwb::T_PRECIP] += cw * precip_coupling * (S_precip_h2s.x[i][j][k] + S_precip_h2s_cloud.x[i][j][k] + S_precip_h2s_ice.x[i][j][k]);
             a[UranCwb::T_QDIV] += cw * (h2s.x[i][j][k] + h2s_cloud.x[i][j][k] + h2s_ice.x[i][j][k]) * div_u;
         }
     }

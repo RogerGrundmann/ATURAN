@@ -17,7 +17,7 @@
  *   rk terms   the RK4-weighted column integrals of each right-hand-side term of the three
  *              equations of a gas, accumulated per thread inside RHSUran: radial / meridional /
  *              zonal transport (advective form, -u.grad q), diffusion, the chemistry source
- *              (NH3 and H2S). The precipitation is not in this model's species equations;
+ *              (NH3 and H2S), the precipitation source (ATURAN_PRECIP_COUPLING);
  *   rk_rest    what the step changed beyond reset + terms: the floor of the final update, the
  *              limiters and round-off. An identity check when none of them binds.
  * q*div(u) is accumulated beside them and NOT applied: the transport is written in advective
@@ -38,7 +38,7 @@
 namespace UranCwb {
 
     enum { G_H2O = 0, G_NH3, G_CH4, G_H2S, NGAS };
-    enum { T_RAD = 0, T_THE, T_PHI, T_DIFF, T_CHEM, T_QDIV, NTERM };
+    enum { T_RAD = 0, T_THE, T_PHI, T_DIFF, T_CHEM, T_PRECIP, T_QDIV, NTERM };
     const int MAXTHR = 256;
 
     struct State {

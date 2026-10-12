@@ -213,6 +213,76 @@ public:
     Array_2D precip_srf_nh3;
     Array_2D precip_srf_ch4;
     Array_2D precip_srf_nh4sh;
+
+    // ===== H2S PRECIPITATION (2026-10-12, on the user's word) =====
+    // H2S has cloud and ice fields in this model and the saturation adjustment has condensed
+    // it from the beginning, but the precipitation scheme knew three species and H2S was not
+    // one of them: its condensate had no sink. These are the hooks the shared Precipitation.h
+    // calls for a further condensable; H2S goes through the same three-category column solver
+    // as H2O, NH3 and CH4, with the model's own H2S constants (saturation pressure pair,
+    // lv_h2s, ls_h2s, t_0_h2s, t_00_h2s). ATURAN_PRECIP_H2S=0 switches it off.
+    Array P_h2s_rain, P_h2s_snow, P_h2s_graupel;                 // [kg/m2/s]
+    Array S_precip_h2s, S_precip_h2s_cloud, S_precip_h2s_ice;    // nondimensional rates for the RHS
+    Array_2D precip_srf_h2s;                                     // at the base of the column
+    static bool precip_h2s_on(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_PRECIP_H2S"); return e ? atoi(e) != 0 : true; }();
+        return v;
+    }
+    template<class P> void precip_extra_species(P& prec){
+        Array* zero_me[] = { &S_precip_h2s, &S_precip_h2s_cloud, &S_precip_h2s_ice };
+        for(Array* a : zero_me){
+            #pragma omp parallel for collapse(2) schedule(static)
+            for(int i = 0; i < im; i++)
+                for(int j = 0; j < jm; j++)
+                    for(int k = 0; k < km; k++) a->x[i][j][k] = 0.0;
+        }
+        if(!precip_h2s_on()) return;
+        typename P::Species s;
+        s.vapour = &h2s; s.cloud = &h2s_cloud; s.ice = &h2s_ice;
+        s.P_r = &P_h2s_rain; s.P_s = &P_h2s_snow; s.P_g = &P_h2s_graupel;
+        s.C = C_h2s; s.L0 = L0_h2s; s.R = R_h2s; s.del_alf = del_alf_h2s; s.del_bet = del_bet_h2s;
+        s.C_i = C_h2s; s.L0_i = L0_h2s; s.del_alf_i = del_alf_h2s; s.del_bet_i = del_bet_h2s;   // no ice pair for H2S
+        s.ep = ep_h2s; s.Lv = lv_h2s; s.Ls = ls_h2s; s.t_frz = t_0_h2s; s.t_low = t_00_h2s;
+        s.S_v = &S_precip_h2s; s.S_c = &S_precip_h2s_cloud; s.S_i = &S_precip_h2s_ice;
+        prec.column(s);
+    }
+    void precip_extra_surface(){
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int j = 0; j < jm; j++){
+            for(int k = 0; k < km; k++){
+                const double f = precip_h2s_on() ? P_h2s_rain.x[0][j][k] + P_h2s_snow.x[0][j][k] + P_h2s_graupel.x[0][j][k] : 0.0;
+                precip_srf_h2s.y[j][k]    = f;
+                precip_srf_total.y[j][k] += f;
+            }
+        }
+    }
+    // The H2S line of ATURAN_PRECIP_DIAG; returns its latent flux [W/m2] for the total.
+    double precip_extra_diag(){
+        if(!precip_h2s_on()) return 0.0;
+        double wsum = 0.0, s_max = 0.0, s_srf = 0.0, top = 0.0; long n_cap = 0;
+        for(int j = 0; j < jm; j++) wsum += std::sin(the.z[j]) * km;
+        #pragma omp parallel for collapse(2) schedule(static) reduction(+:s_max,s_srf,n_cap) reduction(max:top)
+        for(int j = 0; j < jm; j++){
+            for(int k = 0; k < km; k++){
+                const double w_ = std::sin(the.z[j]);
+                double cmax = 0.0;
+                for(int i = 0; i < im; i++){
+                    const double f = P_h2s_rain.x[i][j][k] + P_h2s_snow.x[i][j][k] + P_h2s_graupel.x[i][j][k];
+                    if(f > cmax) cmax = f;
+                    if(P_h2s_rain.x[i][j][k] >= 1.0e-4) n_cap++;
+                    if(P_h2s_snow.x[i][j][k] >= 1.0e-4) n_cap++;
+                    if(P_h2s_graupel.x[i][j][k] >= 1.0e-4) n_cap++;
+                }
+                s_max += w_ * cmax; s_srf += w_ * precip_srf_h2s.y[j][k];
+                if(cmax > top) top = cmax;
+            }
+        }
+        const double mean_max = s_max / wsum;
+        printf("      ATURAN: [PRECIP-DIAG] H2S  column-max flux: mean %.4e max %.4e kg/m2/s (%.4f mm/d mean) = %.4e W/m2 latent;  at the surface: mean %.4e;  cells on the cap %ld\n",
+               mean_max, top, mean_max * 86400.0, lv_h2s * mean_max, s_srf / wsum, n_cap);
+        return lv_h2s * mean_max;
+    }
+
     Array_2D precip_srf_total;
 
     Array radiation;            // net thermal radiative flux [W/m2]
@@ -406,8 +476,18 @@ public:
     static bool satadj_default_newton(){ return true; }
     static bool satadj_default_conserve(){ return true; }
     // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
-    // ATURAN_PRECIP_SCALE overrides.
-    static double precip_rate_scale(){ return 1.0; }
+    // ATURAN_PRECIP_SCALE overrides. CALIBRATED 2026-10-12 by the rule the Jovian and Saturnian
+    // sets were made with: the latent-heat flux of the precipitation, Lv * (mean over the columns
+    // of the column's largest flux), summed over H2O, NH3 and CH4, shall equal the planet's
+    // emitted flux F_int + S(1-A)/4 = 0.689 W/m2. ATURAN_PRECIP_DIAG=1, 16 iterations, with the
+    // corrected t_00 values (ATJUP/satchk/giants): scale 1 gave 332 W/m2 with 132 487 cells on the P_max_flux cap
+    // (H2O alone, old t_00); 0.01 -> 7.31, 0.003 -> 2.19, 0.001 -> 0.730 (the same with the coupling) W/m2,
+    // none on the cap: linear, and 0.00094 met 0.689 for those three. WITH H2S IN THE SCHEME
+    // (same day) the four give 1.993 W/m2 at 0.00094 (H2O / NH3 / CH4 / H2S 0.324 / 0.297 / 0.066 / 1.306),
+    // so the scale was 0.000325 -- H2S carried two thirds of that sum through lv_h2s = 3.534e6 J/kg.
+    // WITH lv_h2s CORRECTED to 5.5e5 J/kg (same day) the scale is 0.00071 (0.00073 read 3 % high).
+    // Nothing longer than 16 iterations stands behind the calibration.
+    static double precip_rate_scale(){ return 0.00071; }
 
     // ---- Hooks for the shared FluxLimiter<Planet> (FluxLimiter.h) ----
     //
@@ -676,14 +756,28 @@ private:
 //    double t_00_h2o = 241.15;  // in K == -32°C (COSMO)
     double t_000 = 235.15;  // in K == -20°C (precipitation module)
 
+    // t_00 OF NH3, CH4 AND H2S (2026-10-12, on the user's word; ATURAN_T00_LEGACY=1 restores the
+    // three old values). t_00 is the temperature below which a species is all ice; the
+    // precipitation converts ice to snow in the band t_00 <= T < t_0 and the saturation adjustment
+    // splits cloud and ice across it. The three stood ABOVE their triple points -- NH3 220 K
+    // against 195.5, H2S 220 K against 187.65, CH4 190.56 K (methane's critical temperature)
+    // against 90.69 -- so the band was empty and their ice could never become snow; the shared
+    // Precipitation.h printed a WARNING about it at every call. ATJUP and ATSAT carry the
+    // corrected values since 2026-07-31, and these are theirs: NH3 140 K, H2S 140 K (ATSAT's),
+    // CH4 67.36 K = 0.7427 * t_0_ch4, the mean proportion of H2O (210.15 / 273.15) and NH3
+    // (140 / 195.5) carried across -- a proportion, not a measured property of methane ice.
+    static bool t00_legacy(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_T00_LEGACY"); return e && atoi(e) != 0; }();
+        return v;
+    }
     double t_0_h2s = 187.65;  // in K == -85.5°C, h2s-ice cloud formation (Planetary Sciences, p. 96)
-    double t_00_h2s = 220.0;  // in K == -133.15°C, h2s-ice cloud formation (Planetary Sciences, p. 96)
+    double t_00_h2s = t00_legacy() ? 220.0 : 140.0;  // in K == -133.15 degC, h2s-ice cloud formation
 
     double t_0_ch4 = 90.69;  // in K == -182.456°C, triple point
-    double t_00_ch4 = 190.56;  // in K == -85.5°C, h2s-ice cloud formation (Planetary Sciences, p. 96)
+    double t_00_ch4 = t00_legacy() ? 190.56 : 67.36;  // in K == -205.79 degC, ch4-ice cloud formation
 
     double t_0_nh3 = 195.5;  // in K == -77.65°C, triple point, gas and liquid pase
-    double t_00_nh3 = 220.0;  // in K == -133.15°C, nh3-ice cloud formation (Planetary Sciences, p. 96)
+    double t_00_nh3 = t00_legacy() ? 220.0 : 140.0;  // in K == -133.15 degC, nh3-ice cloud formation
 //    double t_00_nh3 = 140.0;  // in K == -133.15°C, nh3-ice cloud formation (Planetary Sciences, p. 96)
 //    double t_00_nh3 = 120.0;  // in K == -153.15°C, nh3-ice cloud formation (Planetary Sciences, p. 96)
 
@@ -865,7 +959,12 @@ private:
 
 // latent heat of evaporation
     double lv_h2o = 2.5009e6;  // latent heat of h2o evaporation at 0°C in J/kg
-    double lv_h2s = 3.5340e6;  // latent heat of h2s evaporation at -73°C in J/kg
+    // lv_h2s CORRECTED 2026-10-12 on the user's word: 5.5e5 J/kg (H2S evaporates with about 548 kJ/kg
+    // at its boiling point). The 3.534e6 that stood here was LARGER than ls_h2s = 7.45e5, so the
+    // heat of fusion ls - lv came out negative, and it made H2S carry two thirds of the
+    // precipitation's latent flux. The saturation adjustment of H2S reads the same number.
+    // ATURAN_LV_H2S=3.534e6 restores.
+    double lv_h2s = [](){ const char* e = getenv("ATURAN_LV_H2S"); return e ? atof(e) : 5.5e5; }();  // latent heat of h2s evaporation in J/kg
     double lv_nh3 = 1.3720e6;  // latent heat of nh3 evaporation at -33.33 in J/kg
     double lv_ch4 = 5.11e5;  // latent heat of nh3 evaporation at -33.33 in J/kg
 

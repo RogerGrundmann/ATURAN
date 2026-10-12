@@ -222,6 +222,16 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
     dump_radial("Emissivity", epsilon, 1.0, i_radial, Uranus_vtk_radial_File);
     DUMP_TURB_PRECIP_3D(dump_radial, i_radial, Uranus_vtk_radial_File);
 
+    // Precipitation at the base of each column [mm/day], as ATJUP and ATSAT write it (2026-10-12,
+    // on the user's word). The 3-D P_* fields above are slices at i_radial; these are 2-D and
+    // always taken at the bottom, the total and its breakdown by species.
+    dump_radial_2d("Precip_total", precip_srf_total, 86400.0, Uranus_vtk_radial_File);
+    dump_radial_2d("Precip_h2o",   precip_srf_h2o,   86400.0, Uranus_vtk_radial_File);
+    dump_radial_2d("Precip_nh3",   precip_srf_nh3,   86400.0, Uranus_vtk_radial_File);
+    dump_radial_2d("Precip_ch4",   precip_srf_ch4,   86400.0, Uranus_vtk_radial_File);
+    dump_radial_2d("Precip_h2s",   precip_srf_h2s,   86400.0, Uranus_vtk_radial_File);
+    dump_radial_2d("Precip_nh4sh", precip_srf_nh4sh, 86400.0, Uranus_vtk_radial_File);
+
     Uranus_vtk_radial_File <<  "VECTORS v-w-Cell float " << endl;
     for(int j = 0; j < jm; j++){
         for(int k = 0; k < km; k++){
