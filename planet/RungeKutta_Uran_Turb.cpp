@@ -1,6 +1,7 @@
 #include "cUranusModel.h"
 #include "TbUran.h"
 #include "CwbUran.h"        // ATURAN_CWB_DIAG, print-only
+#include "UbUran.h"          // ATURAN_UB_DIAG, print-only
 
 using namespace std;
 
@@ -97,9 +98,16 @@ void cUranusModel::computeHydrostaticPressure(){
             // in the integral only while ATURAN_HYDRO_SPLIT carries it (the default here).
             if(metric_split()){
                 static const bool hs_ = [](){ const char* e = getenv("ATURAN_HYDRO_SPLIT"); return e ? atoi(e) != 0 : true; }();
+                // ATURAN_CORIOLIS_SPLIT: plus the radial Coriolis force as rhs_u forms it,
+                // -Coriolis * (L_atm/u_0) * (-2 omega sin(theta) w) -- with the TRUE sine, not the
+                // metric floor the RHS's table carries: a metric floor has no business in a body
+                // force, and since the term leaves rhs_u altogether nothing has to match it there.
+                const double cor_ = coriolis_split()
+                    ? Coriolis * (L_atm / u_0) * 2.0 * omega * std::abs(sin(the.z[j])) : 0.0;
                 auto f_ = [&](int i)->double{
                     return (hs_ ? buoy(i) : 0.0)
-                         + (v.x[i][j][k] * v.x[i][j][k] + w.x[i][j][k] * w.x[i][j][k]) / metricRadius(rad.z[i]); };
+                         + (v.x[i][j][k] * v.x[i][j][k] + w.x[i][j][k] * w.x[i][j][k]) / metricRadius(rad.z[i])
+                         + cor_ * w.x[i][j][k]; };
                 p_hydro.x[0][j][k] = 0.0;
                 for(int i = 1; i < im; i++)
                     p_hydro.x[i][j][k] = p_hydro.x[i-1][j][k] + 0.5 * (f_(i-1) + f_(i)) * dr;
@@ -190,6 +198,7 @@ void cUranusModel::RungeKuttaUran(){
         const double wgt  = (stage == 0 || stage == 3) ? 1.0 : 2.0;
         UranTb::st().stage_wgt = wgt;                 // ATURAN_TB_DIAG: weight of the tendencies RHSUran is about to sum
         UranCwb::st().stage_wgt = wgt;                // ATURAN_CWB_DIAG: the same weight
+        UranUb::st().stage_wgt = wgt;                 // ATURAN_UB_DIAG: the same weight
 
         // Tells RHSUran which stage it is inside, so item 1's budget instrument can record the
         // decomposition at stage 0 only — the evaluation at y_n. Read-only in the loop below.

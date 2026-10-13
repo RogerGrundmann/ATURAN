@@ -11,6 +11,7 @@
 #include "cUranusModel.h"
 #include "TbUran.h"
 #include "CwbUran.h"        // ATURAN_CWB_DIAG, print-only
+#include "UbUran.h"          // ATURAN_UB_DIAG, print-only
 
 using namespace std;
 
@@ -272,6 +273,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     // ATURAN_METRIC_SPLIT=1: the metric term leaves rhs_u, p_hydro balances it (RungeKutta_Uran_Turb.cpp)
     const double metric_on = metric_split() ? 0.0 : 1.0;
+    const double cor_rad_on = coriolis_split() ? 0.0 : 1.0;
     double transport_u = u_ijk * dudr + v_invrm * dudthe + w_invrs * dudphi
         - metric_on * (v_ijk * v_ijk + w_ijk * w_ijk) * inv_rm;
     double transport_v = u_ijk * dvdr + v_invrm * dvdthe + w_invrs * dvdphi
@@ -680,10 +682,35 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + buoyancy_u                                          // see the hydrostatic-split note above
         - transport_u
         + diffusion_u / re_eff + diffusion_u * nue_t
-        - Coriolis    * scale_Cor * Coriolis_rad
+        - cor_rad_on * Coriolis * scale_Cor * Coriolis_rad     // ATURAN_CORIOLIS_SPLIT: 0 when p_hydro carries it
         // PLUS: the force points away from the axis. See the block where it is formed.
         + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_rad
         - sponge * u_ijk;
+
+    // ATURAN_UB_DIAG (print-only, see UbUran.h): RK4-weighted level sums of each term of rhs_u, per
+    // thread, for the whole level and for the equatorial band. Nothing here is read by the model.
+    if(UranUb::st().on && i < UranUb::MAXLEV){
+        const double cw = UranUb::st().stage_wgt * std::sin(the.z[j]);
+        #ifdef _OPENMP
+            const int th_ = omp_get_thread_num();
+        #else
+            const int th_ = 0;
+        #endif
+        const double tm_[UranUb::NTERM] = {
+            - dpdr_term,
+            + metric_on * (v_ijk * v_ijk + w_ijk * w_ijk) * inv_rm,
+            - (u_ijk * dudr + v_invrm * dudthe + w_invrs * dudphi),
+            + diffusion_u / re_eff + diffusion_u * nue_t,
+            - cor_rad_on * Coriolis * scale_Cor * Coriolis_rad,
+            + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_rad,
+            + buoyancy_u,
+            - sponge * u_ijk };
+        const bool eq_ = (j >= UranUb::st().j_lo && j <= UranUb::st().j_hi);
+        for(int q_ = 0; q_ < UranUb::NTERM; q_++){
+            UranUb::st().acc[th_][UranUb::R_ALL][q_][i] += cw * tm_[q_];
+            if(eq_) UranUb::st().acc[th_][UranUb::R_EQ][q_][i] += cw * tm_[q_];
+        }
+    }
 
     rhs_v.x[i][j][k] =
         - dpdthe_term

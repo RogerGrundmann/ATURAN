@@ -1283,6 +1283,13 @@ private:
     static bool metric_split(){
         static const bool v = [](){ const char* e = getenv("ATURAN_METRIC_SPLIT"); return e ? atoi(e) != 0 : true; }();
         return v; }
+    // ATURAN_CORIOLIS_SPLIT (2026-10-13; DEFAULT 1 on the user's word, 0 restores; acts only with
+    // ATURAN_METRIC_SPLIT): the radial Coriolis term of rhs_u joins the metric term in p_hydro. It
+    // is a radial body force like the other, and with the metric term gone it was the one thing
+    // left driving u (measured on ATNEPT with ATNEPT_UB_DIAG).
+    static bool coriolis_split(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_CORIOLIS_SPLIT"); return e ? atoi(e) != 0 : true; }();
+        return v && metric_split(); }
     void computeBuoyancyRefLevel();
     void computeHydrostaticPressure();
     Array rho_mix;              // local mixture density from ideal gas: p_stat/(R_mix*T)
