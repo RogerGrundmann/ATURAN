@@ -157,6 +157,7 @@ private:
 
     void compute_vel_star();
     void init_fields();
+    void seam_copy();
     void compute_sources();
     void zero_land_cells();
     void clamp_nue();
@@ -234,6 +235,7 @@ inline void Turbulence<Planet>::init(){
     compute_sources();   // prime nue, tke_source, dis_source from the ABL profile
     zero_land_cells();
     clamp_nue();
+    seam_copy();
 
     auto end     = chrono::high_resolution_clock::now();
     auto elapsed = chrono::duration_cast<chrono::nanoseconds>(end - begin);
@@ -257,6 +259,7 @@ inline void Turbulence<Planet>::run(){
     apply_wall_bc();
     zero_land_cells();
     clamp_nue();
+    seam_copy();
 
     auto end     = chrono::high_resolution_clock::now();
     auto elapsed = chrono::duration_cast<chrono::nanoseconds>(end - begin);
@@ -366,10 +369,11 @@ inline void Turbulence<Planet>::init_fields(){
     const double nd_omega = L_m / m.u_0;                          // omega_phys -> omega*
     const double nd_eps   = L_m / (m.u_0 * m.u_0 * m.u_0);        // eps_phys   -> eps*
     const double C_nue_l  = C_nue;
+    const int k_first = ATPhys::phi_first(ATPhys::phi_periodic<Planet>());   // <TAG>_BC_PHI_PERIODIC
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 1; j < m.jm - 1; j++){
-        for(int k = 1; k < m.km - 1; k++){
+        for(int k = k_first; k < m.km - 1; k++){
             // Per-column friction velocity and derived background floors.
             const double vs     = m.vel_star.y[j][k];
             const double k_bg   = 0.01 * vs * vs / std::sqrt(C_nue_l);                        // [m2/s2]
@@ -415,6 +419,30 @@ inline void Turbulence<Planet>::init_fields(){
                 m.tken.x[i][j][k] = m.tke.x[i][j][k];
                 m.disn.x[i][j][k] = m.dis.x[i][j][k];
             }
+        }
+    }
+    seam_copy();
+}
+
+// -----------------------------------------------------------------------
+// <TAG>_BC_PHI_PERIODIC=1 (ATPhys.h): the closure's fields are computed at the seam meridian
+// k = 0 like everywhere else, and k = km-1 is made its copy here. Without the knob this does
+// nothing: the meridian is then whatever the model's boundary conditions make of it.
+template<class Planet>
+inline void Turbulence<Planet>::seam_copy(){
+    if(!ATPhys::phi_periodic<Planet>()) return;
+    const int kl = m.km - 1;
+    #pragma omp parallel for collapse(2) schedule(static)
+    for(int i = 0; i < m.im; i++){
+        for(int j = 0; j < m.jm; j++){
+            m.tke.x[i][j][kl]        = m.tke.x[i][j][0];
+            m.dis.x[i][j][kl]        = m.dis.x[i][j][0];
+            m.tken.x[i][j][kl]       = m.tken.x[i][j][0];
+            m.disn.x[i][j][kl]       = m.disn.x[i][j][0];
+            m.nue.x[i][j][kl]        = m.nue.x[i][j][0];
+            m.prod.x[i][j][kl]       = m.prod.x[i][j][0];
+            m.tke_source.x[i][j][kl] = m.tke_source.x[i][j][0];
+            m.dis_source.x[i][j][kl] = m.dis_source.x[i][j][0];
         }
     }
 }
@@ -475,10 +503,14 @@ template<class Planet>
 inline void Turbulence<Planet>::compute_sources(){
     const double C_nue_l   = C_nue;
     const double dis_min_l = dis_min;
+    const bool phi_per = ATPhys::phi_periodic<Planet>();        // <TAG>_BC_PHI_PERIODIC
+    const int  k_first = ATPhys::phi_first(phi_per);
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 1; j < m.jm - 1; j++){
-        for(int k = 1; k < m.km - 1; k++){
+        for(int k = k_first; k < m.km - 1; k++){
+            const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);    // the phi neighbours
+            const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
             const int    i_mount = m.surface_index(j, k);
             const double y_mount = height_m(i_mount);               // surface height [m]
 
@@ -527,16 +559,16 @@ inline void Turbulence<Planet>::compute_sources(){
                 const double dvdthe = (m.v.x[i][j+1][k] - m.v.x[i][j-1][k]) * inv_rm2dthe;
                 const double dwdthe = (m.w.x[i][j+1][k] - m.w.x[i][j-1][k]) * inv_rm2dthe;
 
-                const double dudphi = (m.u.x[i][j][k+1] - m.u.x[i][j][k-1]) * inv_rmsinthe2dphi;
-                const double dvdphi = (m.v.x[i][j][k+1] - m.v.x[i][j][k-1]) * inv_rmsinthe2dphi;
-                const double dwdphi = (m.w.x[i][j][k+1] - m.w.x[i][j][k-1]) * inv_rmsinthe2dphi;
+                const double dudphi = (m.u.x[i][j][ke] - m.u.x[i][j][kw]) * inv_rmsinthe2dphi;
+                const double dvdphi = (m.v.x[i][j][ke] - m.v.x[i][j][kw]) * inv_rmsinthe2dphi;
+                const double dwdphi = (m.w.x[i][j][ke] - m.w.x[i][j][kw]) * inv_rmsinthe2dphi;
 
                 // ---- tke/dis gradients with Neumann BC at land faces ----
                 const bool neumann_bot = (i > 0        && is_land(i-1, j, k));
                 const bool neumann_jm1 = (j > 0        && is_land(i, j-1, k));
                 const bool neumann_jp1 = (j < m.jm - 1 && is_land(i, j+1, k));
-                const bool neumann_km1 = (k > 0        && is_land(i, j, k-1));
-                const bool neumann_kp1 = (k < m.km - 1 && is_land(i, j, k+1));
+                const bool neumann_km1 = (kw >= 0   && is_land(i, j, kw));
+                const bool neumann_kp1 = (ke < m.km && is_land(i, j, ke));
 
                 const double tke_im1 = neumann_bot ? m.tke.x[i][j][k] : m.tke.x[i-1][j][k];
                 const double dis_im1 = neumann_bot ? m.dis.x[i][j][k] : m.dis.x[i-1][j][k];
@@ -544,10 +576,10 @@ inline void Turbulence<Planet>::compute_sources(){
                 const double tke_jp1 = neumann_jp1 ? m.tke.x[i][j][k] : m.tke.x[i][j+1][k];
                 const double dis_jm1 = neumann_jm1 ? m.dis.x[i][j][k] : m.dis.x[i][j-1][k];
                 const double dis_jp1 = neumann_jp1 ? m.dis.x[i][j][k] : m.dis.x[i][j+1][k];
-                const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k-1];
-                const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k+1];
-                const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k-1];
-                const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k+1];
+                const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][kw];
+                const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][ke];
+                const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][kw];
+                const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][ke];
 
                 const double dtkedr   = (m.tke.x[i+1][j][k] - tke_im1) * inv_2dr * exp_rm;
                 const double ddisdr   = (m.dis.x[i+1][j][k] - dis_im1) * inv_2dr * exp_rm;
@@ -718,17 +750,20 @@ inline void Turbulence<Planet>::compute_k_omega(int i, int j, int k,
     const bool neumann_bot = (i > 0        && is_land(i-1, j, k));
     const bool neumann_jm1 = (j > 0        && is_land(i, j-1, k));
     const bool neumann_jp1 = (j < m.jm - 1 && is_land(i, j+1, k));
-    const bool neumann_km1 = (k > 0        && is_land(i, j, k-1));
-    const bool neumann_kp1 = (k < m.km - 1 && is_land(i, j, k+1));
+    const bool phi_per = ATPhys::phi_periodic<Planet>();        // <TAG>_BC_PHI_PERIODIC
+    const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+    const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+    const bool neumann_km1 = (kw >= 0   && is_land(i, j, kw));
+    const bool neumann_kp1 = (ke < m.km && is_land(i, j, ke));
 
     const double tke_jm1 = neumann_jm1 ? m.tke.x[i][j][k] : m.tke.x[i][j-1][k];
     const double tke_jp1 = neumann_jp1 ? m.tke.x[i][j][k] : m.tke.x[i][j+1][k];
     const double dis_jm1 = neumann_jm1 ? m.dis.x[i][j][k] : m.dis.x[i][j-1][k];
     const double dis_jp1 = neumann_jp1 ? m.dis.x[i][j][k] : m.dis.x[i][j+1][k];
-    const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k-1];
-    const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k+1];
-    const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k-1];
-    const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k+1];
+    const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][kw];
+    const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][ke];
+    const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][kw];
+    const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][ke];
 
     const double dtkedr_neu = neumann_bot
         ? (m.tke.x[i+1][j][k] - m.tke.x[i][j][k]) * (1.0 / (2.0 * m.dr)) * exp_rm : dtkedr;
@@ -741,13 +776,13 @@ inline void Turbulence<Planet>::compute_k_omega(int i, int j, int k,
 
     const double dudr   = (m.u.x[i+1][j][k] - m.u.x[i-1][j][k]) / (2.0 * m.dr) / (rm + 1.0);
     const double dvdthe = (m.v.x[i][j+1][k] - m.v.x[i][j-1][k]) / (rm * 2.0 * m.dthe);
-    const double dwdphi = (m.w.x[i][j][k+1] - m.w.x[i][j][k-1]) / (rmsinthe * 2.0 * m.dphi);
+    const double dwdphi = (m.w.x[i][j][ke] - m.w.x[i][j][kw]) / (rmsinthe * 2.0 * m.dphi);
 
     const double dudthe_u = (m.u.x[i][j+1][k] - m.u.x[i][j-1][k]) / (rm       * 2.0 * m.dthe);
-    const double dudphi_u = (m.u.x[i][j][k+1] - m.u.x[i][j][k-1]) / (rmsinthe * 2.0 * m.dphi);
+    const double dudphi_u = (m.u.x[i][j][ke] - m.u.x[i][j][kw]) / (rmsinthe * 2.0 * m.dphi);
     const double dvdr_u   = (m.v.x[i+1][j][k] - m.v.x[i-1][j][k]) / (2.0 * m.dr) / (rm + 1.0);
     const double dwdr_u   = (m.w.x[i+1][j][k] - m.w.x[i-1][j][k]) / (2.0 * m.dr) / (rm + 1.0);
-    const double dvdphi_u = (m.v.x[i][j][k+1] - m.v.x[i][j][k-1]) / (rmsinthe * 2.0 * m.dphi);
+    const double dvdphi_u = (m.v.x[i][j][ke] - m.v.x[i][j][kw]) / (rmsinthe * 2.0 * m.dphi);
     const double dwdthe_u = (m.w.x[i][j+1][k] - m.w.x[i][j-1][k]) / (rm       * 2.0 * m.dthe);
 
     const double S11 = dudr, S22 = dvdthe, S33 = dwdphi;
@@ -817,17 +852,20 @@ inline void Turbulence<Planet>::compute_k_omega_SST(int i, int j, int k,
     const bool neumann_bot = (i > 0        && is_land(i-1, j, k));
     const bool neumann_jm1 = (j > 0        && is_land(i, j-1, k));
     const bool neumann_jp1 = (j < m.jm - 1 && is_land(i, j+1, k));
-    const bool neumann_km1 = (k > 0        && is_land(i, j, k-1));
-    const bool neumann_kp1 = (k < m.km - 1 && is_land(i, j, k+1));
+    const bool phi_per = ATPhys::phi_periodic<Planet>();        // <TAG>_BC_PHI_PERIODIC
+    const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+    const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+    const bool neumann_km1 = (kw >= 0   && is_land(i, j, kw));
+    const bool neumann_kp1 = (ke < m.km && is_land(i, j, ke));
 
     const double tke_jm1 = neumann_jm1 ? m.tke.x[i][j][k] : m.tke.x[i][j-1][k];
     const double tke_jp1 = neumann_jp1 ? m.tke.x[i][j][k] : m.tke.x[i][j+1][k];
     const double dis_jm1 = neumann_jm1 ? m.dis.x[i][j][k] : m.dis.x[i][j-1][k];
     const double dis_jp1 = neumann_jp1 ? m.dis.x[i][j][k] : m.dis.x[i][j+1][k];
-    const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k-1];
-    const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][k+1];
-    const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k-1];
-    const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][k+1];
+    const double tke_km1 = neumann_km1 ? m.tke.x[i][j][k] : m.tke.x[i][j][kw];
+    const double tke_kp1 = neumann_kp1 ? m.tke.x[i][j][k] : m.tke.x[i][j][ke];
+    const double dis_km1 = neumann_km1 ? m.dis.x[i][j][k] : m.dis.x[i][j][kw];
+    const double dis_kp1 = neumann_kp1 ? m.dis.x[i][j][k] : m.dis.x[i][j][ke];
 
     const double dtkedr_neu = neumann_bot
         ? (m.tke.x[i+1][j][k] - m.tke.x[i][j][k]) * (1.0 / (2.0 * m.dr)) * exp_rm : dtkedr;

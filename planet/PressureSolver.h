@@ -58,7 +58,8 @@
  * thread, so k-1 was current and k+1 one sweep old, i.e. lexicographic Gauss-Seidel — correct in
  * serial, broken only by the (i,j) parallelism. Jacobi would have been the easier fix and would
  * have cost the convergence rate. The colour is selected with a `continue` rather than by striding
- * k, because the k loop carries a sliding window over the solid mask that assumes consecutive k.
+ * k. (The k loop used to carry a sliding window over the solid mask; it asks is_solid() per cell
+ * since 2026-10-13, when the phi neighbours stopped being k-1 and k+1 at the seam.)
  *
  * ===== THE POISSON METRIC, WHICH HAS NO KNOB ON PURPOSE =====
  *
@@ -196,6 +197,14 @@ void PressureSolver<Planet>::run(){
     const double inv_dthe  = 1.0 / m.dthe;
     const double inv_dphi  = 1.0 / m.dphi;
 
+    // <TAG>_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is relaxed like any other
+    // cell, its phi neighbours taken round the ring, and k = km-1 is its copy. With 0 the loop is
+    // k = 1..km-2 and kw / ke are k-1 / k+1, as before. The two colours stay consistent across
+    // the seam as long as km-1 is even; where it is not, k = 0 and k = km-2 share a colour, which
+    // costs the ordering of one pair of cells that the same thread sweeps anyway.
+    const bool phi_per = ATPhys::phi_periodic<Planet>();
+    const int  k_first = ATPhys::phi_first(phi_per);
+
     for(int sweep = 0; sweep < n_sweeps; sweep++){
 
       for(int colour = 0; colour < 2; colour++){
@@ -236,23 +245,17 @@ void PressureSolver<Planet>::run(){
                 const bool i_in_range = (i < m.im-2);
                 const bool j_inner    = (j > 2) && (j < m.jm-2);
 
-                // Sliding window for the k-direction solid status. It must advance on every k,
-                // which is why the colour is skipped with a `continue` further down rather than
-                // by striding this loop.
-                bool sld_k0 = m.is_solid(i,j,0), sld_k1 = m.is_solid(i,j,1);
+                for(int k = k_first; k < m.km-1; k++){
+                    if(((i + j + k) & 1) != colour) continue;
 
-                for(int k = 1; k < m.km-1; k++){
-                    const bool sld_ijk = sld_k1;
-                    const bool sld_kp1 = m.is_solid(i,j,k+1);
-                    const bool sld_km1 = sld_k0;
+                    const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+                    const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+
+                    const bool sld_ijk = m.is_solid(i,j,k);
+                    const bool sld_kp1 = m.is_solid(i,j,ke);
+                    const bool sld_km1 = m.is_solid(i,j,kw);
                     const bool sld_kp2 = (k < m.km-2) ? m.is_solid(i,j,k+2) : false;
                     const bool sld_km2 = (k > 2)      ? m.is_solid(i,j,k-2) : false;
-
-                    sld_k0 = sld_k1;
-                    sld_k1 = sld_kp1;
-
-                    // Cells of the other colour are skipped AFTER the window bookkeeping above.
-                    if(((i + j + k) & 1) != colour) continue;
 
                     // ---- Divergence source ----
                     double du_dr, dv_dthe, dw_dphi;
@@ -265,8 +268,8 @@ void PressureSolver<Planet>::run(){
                                  - (m.rhs_u.x[i+1][j][k] - m.rhs_u.x[i-1][j][k])) * inv_2dr;
                         dv_dthe = ((m.aux_v.x[i][j+1][k] - m.aux_v.x[i][j-1][k])
                                  - (m.rhs_v.x[i][j+1][k] - m.rhs_v.x[i][j-1][k])) * inv_2dthe;
-                        dw_dphi = ((m.aux_w.x[i][j][k+1] - m.aux_w.x[i][j][k-1])
-                                 - (m.rhs_w.x[i][j][k+1] - m.rhs_w.x[i][j][k-1])) * inv_2dphi;
+                        dw_dphi = ((m.aux_w.x[i][j][ke] - m.aux_w.x[i][j][kw])
+                                 - (m.rhs_w.x[i][j][ke] - m.rhs_w.x[i][j][kw])) * inv_2dphi;
                     } else {
                         bool r_flag = false, the_flag = false, phi_flag = false;
 
@@ -338,7 +341,7 @@ void PressureSolver<Planet>::run(){
                         if(!the_flag)
                             dv_dthe = (m.aux_v.x[i][j+1][k] - m.aux_v.x[i][j-1][k]) * inv_2dthe;
                         if(!phi_flag)
-                            dw_dphi = (m.aux_w.x[i][j][k+1] - m.aux_w.x[i][j][k-1]) * inv_2dphi;
+                            dw_dphi = (m.aux_w.x[i][j][ke] - m.aux_w.x[i][j][kw]) * inv_2dphi;
                     }
 
                     double div_src = du_dr   * geo.exp_rm
@@ -354,15 +357,15 @@ void PressureSolver<Planet>::run(){
                         if(!m.is_solid(i-1,j,k)){ acc += num1 * m.p_dyn.x[i-1][j][k]; den += num1; }
                         if(!m.is_solid(i,j+1,k)){ acc += num2 * m.p_dyn.x[i][j+1][k]; den += num2; }
                         if(!m.is_solid(i,j-1,k)){ acc += num2 * m.p_dyn.x[i][j-1][k]; den += num2; }
-                        if(!sld_kp1)            { acc += num3 * m.p_dyn.x[i][j][k+1]; den += num3; }
-                        if(!sld_km1)            { acc += num3 * m.p_dyn.x[i][j][k-1]; den += num3; }
+                        if(!sld_kp1)            { acc += num3 * m.p_dyn.x[i][j][ke]; den += num3; }
+                        if(!sld_km1)            { acc += num3 * m.p_dyn.x[i][j][kw]; den += num3; }
                         // A fluid cell walled in on all six faces has no pressure equation left;
                         // leave it as it is rather than dividing by zero.
                         if(den <= 0.0) continue;
                     } else {
                         acc = (m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k]) * num1
                             + (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k]) * num2
-                            + (m.p_dyn.x[i][j][k+1] + m.p_dyn.x[i][j][k-1]) * num3;
+                            + (m.p_dyn.x[i][j][ke] + m.p_dyn.x[i][j][kw]) * num3;
                     }
 
                     // The clamp is a discrete max principle, so it uses the denominator this cell
@@ -406,6 +409,10 @@ void PressureSolver<Planet>::run(){
         #pragma omp parallel for collapse(2)
         for(int i = 0; i < m.im; i++){
             for(int j = 0; j < m.jm; j++){
+                if(phi_per){        // k = 0 was relaxed above; km-1 is its copy
+                    m.p_dyn.x[i][j][m.km-1] = m.p_dyn.x[i][j][0];
+                    continue;
+                }
                 m.p_dyn.x[i][j][0]      = m.c43 * m.p_dyn.x[i][j][1]      - m.c13 * m.p_dyn.x[i][j][2];
                 m.p_dyn.x[i][j][m.km-1] = m.c43 * m.p_dyn.x[i][j][m.km-2] - m.c13 * m.p_dyn.x[i][j][m.km-3];
                 m.p_dyn.x[i][j][0] = m.p_dyn.x[i][j][m.km-1]

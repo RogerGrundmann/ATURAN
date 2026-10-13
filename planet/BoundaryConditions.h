@@ -45,6 +45,10 @@
  *                               integrate (ATJUP 2, ATSAT 1, ATNEPT and ATURAN 0). bcTheta fills
  *                               them unless <TAG>_BC_POLE_FILL=0.
  *
+ *   Planet::bc_default_phi_periodic()
+ *                               <TAG>_BC_PHI_PERIODIC, see ATPhys.h: 1 makes the seam meridian an
+ *                               ordinary integrated cell and bcPhi a copy of k=0 onto k=km-1.
+ *
  *   Planet::bc_default_*()      Each knob's default. ATJUP ships rigid_lid and top_taper ON, on
  *                               Jupiter evidence; ATSAT ships everything OFF, because on Saturn
  *                               none of it is measured yet.
@@ -164,9 +168,13 @@ void BoundaryConditions<Planet>::bcRadius()
     }
     const bool pin_t_top = do_t_pin && ((int)m.t_top_init.size() == jm);
 
+    // With the periodic seam k = 0 is an integrated cell and needs its two radial planes like any
+    // other; a model whose loops are interior-only (bc_margin 1) would leave them unset.
+    const int k_lo = ATPhys::phi_periodic<Planet>() ? 0 : mg;
+
     #pragma omp parallel for
     for(int j = mg; j < jm-mg; j++){
-        for(int k = mg; k < km-mg; k++){
+        for(int k = k_lo; k < km-mg; k++){
             for(int f = 0; f < nf; f++){
                 Array& F = *fields[f];
                 F.x[0][j][k] = BCForm::apply(form, fdef,
@@ -309,8 +317,10 @@ void BoundaryConditions<Planet>::bcTheta()
     // others having sat in the frozen rows.
     const int nfill = (pole_fill() != 0) ? Planet::bc_pole_open_rows() : 0;
 
+    const int k_lo = ATPhys::phi_periodic<Planet>() ? 0 : mg;   // as in bcRadius
+
     #pragma omp parallel for
-    for(int k = mg; k < km-mg; k++){
+    for(int k = k_lo; k < km-mg; k++){
         for(int i = mg; i < im-mg; i++){
             if(nfill > 0){
                 const int jf = nfill + 1;
@@ -385,6 +395,31 @@ void BoundaryConditions<Planet>::bcPhi()
     std::vector<double> floors = m.bc_turb_floors();
     const int nt = (int)turb.size();
     const bool turb_bc = m.bc_turb_active();
+
+    // <TAG>_BC_PHI_PERIODIC=1 (2026-10-13, see ATPhys.h): the meridian is integrated at k = 0 like
+    // every other, with its west neighbour at km-2, so there is nothing to reconstruct. k = km-1
+    // becomes the copy of k = 0. Every field of the list must then be COMPUTED at k = 0 by whoever
+    // owns it -- the Runge-Kutta step, the chemistry, the forces, the latent heat -- which is what
+    // the knob switches on in each of them. The seam damping below belongs to the reconstruction
+    // and is not applied.
+    if(ATPhys::phi_periodic<Planet>()){
+        #pragma omp parallel for
+        for(int i = 0; i < im; i++){
+            for(int j = 0; j < jm; j++){
+                for(int f = 0; f < nf; f++){
+                    Array& F = *fields[f];
+                    F.x[i][j][km-1] = F.x[i][j][0];
+                }
+                if(turb_bc){
+                    for(int f = 0; f < nt; f++){
+                        Array& F = *turb[f];
+                        F.x[i][j][0] = F.x[i][j][km-1] = std::max(floors[f], F.x[i][j][0]);
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     #pragma omp parallel for
     for(int i = 0; i < im; i++){

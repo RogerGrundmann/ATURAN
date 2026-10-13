@@ -301,6 +301,10 @@ void cUranusModel::Forces(){
     const double inv_2dthe = 1.0 / (2.0 * dthe);
     const double inv_2dphi = 1.0 / (2.0 * dphi);
 
+    // ATURAN_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is computed like any other.
+    const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
+    const int  k_first = ATPhys::phi_first(phi_per);
+
     #pragma omp parallel for schedule(static) collapse(2)
     for(int i = 1; i < im-1; i++){
         for(int j = 1; j < jm-1; j++){
@@ -309,7 +313,9 @@ void cUranusModel::Forces(){
             const double costhe   = cos(the.z[j]);
             const double rmsinthe = rm * sinthe;
 
-            for(int k = 1; k < km-1; k++){
+            for(int k = k_first; k < km-1; k++){
+                const int kw = ATPhys::phi_wrap(phi_per, k-1, km);
+                const int ke = ATPhys::phi_wrap(phi_per, k+1, km);
 
                 const double Coriolis_rad = -2.0 * omega * sinthe * w.x[i][j][k];
                 const double Coriolis_the = +2.0 * omega * costhe * w.x[i][j][k];
@@ -318,7 +324,7 @@ void cUranusModel::Forces(){
 
                 const double dpdr   = (p_dyn.x[i+1][j][k] - p_dyn.x[i-1][j][k]) * inv_2dr;
                 const double dpdthe = (p_dyn.x[i][j+1][k] - p_dyn.x[i][j-1][k]) * inv_2dthe;
-                const double dpdphi = (p_dyn.x[i][j][k+1] - p_dyn.x[i][j][k-1]) * inv_2dphi;
+                const double dpdphi = (p_dyn.x[i][j][ke] - p_dyn.x[i][j][kw]) * inv_2dphi;
 
                 // u,v,w are non-dimensional (divided by u_0), so restore
                 // physical units: F_Cor [N/m³] = ρ · u_0 · |2Ω×v_ND|

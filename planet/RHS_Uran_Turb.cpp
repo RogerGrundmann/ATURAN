@@ -37,6 +37,12 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     const double inv_dthe2 = geo.inv_dthe2;
     const double inv_dphi2 = geo.inv_dphi2;
 
+    // The phi neighbours. k-1 and k+1, except with ATURAN_BC_PHI_PERIODIC=1 at the seam, where
+    // they go round the ring of the km-1 distinct meridians (ATPhys.h).
+    const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
+    const int kw = ATPhys::phi_wrap(phi_per, k-1, km);
+    const int ke = ATPhys::phi_wrap(phi_per, k+1, km);
+
     // Cache local cell values
     const double u_ijk = u.x[i][j][k];
     const double v_ijk = v.x[i][j][k];
@@ -141,8 +147,8 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     // ===== Phi-direction derivatives (central differences) =====
     #define COMPUTE_DPHI(FIELD, d1, d2) \
-        d1 = (FIELD.x[i][j][k+1] - FIELD.x[i][j][k-1]) * inv_2dphi; \
-        d2 = (FIELD.x[i][j][k+1] - 2.0*FIELD.x[i][j][k] + FIELD.x[i][j][k-1]) * inv_dphi2;
+        d1 = (FIELD.x[i][j][ke] - FIELD.x[i][j][kw]) * inv_2dphi; \
+        d2 = (FIELD.x[i][j][ke] - 2.0*FIELD.x[i][j][k] + FIELD.x[i][j][kw]) * inv_dphi2;
 
     COMPUTE_DPHI(u,         dudphi,    d2udphi2)
     COMPUTE_DPHI(v,         dvdphi,    d2vdphi2)
@@ -164,7 +170,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     double dtkedphi, ddisdphi, d2tkedphi2, d2disdphi2;
     COMPUTE_DPHI(tke,       dtkedphi, d2tkedphi2)
     COMPUTE_DPHI(dis,       ddisdphi, d2disdphi2)
-    dpdphi = (p_dyn.x[i][j][k+1] - p_dyn.x[i][j][k-1]) * inv_2dphi;
+    dpdphi = (p_dyn.x[i][j][ke] - p_dyn.x[i][j][kw]) * inv_2dphi;
     #undef COMPUTE_DPHI
 
 
@@ -663,7 +669,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     double dphdthe_term = 0.0, dphdphi_term = 0.0;
     if(hydro_split != 0){
         dphdthe_term = (p_hydro.x[i][j+1][k] - p_hydro.x[i][j-1][k]) * inv_2dthe * inv_rm;
-        dphdphi_term = (p_hydro.x[i][j][k+1] - p_hydro.x[i][j][k-1]) * inv_2dphi * inv_rmsinthe;
+        dphdphi_term = (p_hydro.x[i][j][ke] - p_hydro.x[i][j][kw]) * inv_2dphi * inv_rmsinthe;
     }
 
     rhs_u.x[i][j][k] =

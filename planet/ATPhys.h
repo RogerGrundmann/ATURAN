@@ -92,4 +92,35 @@ inline double polar_divisor_floor(){
     return v;
 }
 
+
+// ===== THE PHI SEAM: <TAG>_BC_PHI_PERIODIC =====
+//
+// The longitude grid has km points over 360 degrees with BOTH ends on it: k = 0 and k = km-1 are
+// the same meridian. Every loop that differences in phi runs k = 1..km-2, so that meridian is
+// integrated by nobody: bcPhi sets it to the mean of two one-sided extrapolations, the pressure
+// solvers do the same to p_dyn, and the fields no list carries keep whatever was there.
+//
+// With the knob at 1 the meridian is an ordinary cell. The loops run k = 0..km-2 and take their
+// phi neighbours through phi_wrap(), which closes the ring over the km-1 distinct meridians
+// (the west neighbour of 0 is km-2, the east neighbour of km-2 is 0); k = km-1 is then only the
+// copy of k = 0 that the output and the pointwise modules read, written by bcPhi, by the pressure
+// solver and by the Shapiro filter. With the knob at 0 phi_wrap() is the identity and
+// phi_first() is 1: the loops are the ones they were.
+template<class Planet>
+inline bool phi_periodic(){
+    static const bool v = env_int(Planet::planet_tag(), "BC_PHI_PERIODIC",
+                                  Planet::bc_default_phi_periodic()) != 0;
+    return v;
+}
+
+// First k of a loop that differences in phi; the last one is km-2 in both cases.
+inline int phi_first(bool periodic){ return periodic ? 0 : 1; }
+
+// The index of a phi neighbour kk = k-2 .. k+2 of a cell k.
+inline int phi_wrap(bool periodic, int kk, int km){
+    if(!periodic) return kk;
+    const int n = km - 1;
+    return kk < 0 ? kk + n : (kk >= n ? kk - n : kk);
+}
+
 }  // namespace ATPhys

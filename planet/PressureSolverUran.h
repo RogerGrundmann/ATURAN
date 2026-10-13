@@ -47,10 +47,19 @@ public:
             if (sinthe_table[j] < m.sinthe_min()) sinthe_table[j] = m.sinthe_min();
         }
 
+        // ATURAN_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is relaxed like any
+        // other cell, its phi neighbours taken round the ring, and k = km-1 is its copy. With 0
+        // the loops run k = 1..km-2 and the meridian is the mean of two extrapolations, as before.
+        // NOTE for the 0 case, found on 2026-10-13: nothing here sets aux_w at k = 0 or km-1 (the
+        // shared solver's prepareProjectionBoundaries does), so the divergence source at k = 1 and
+        // km-2 differences aux_w against whatever those two planes hold.
+        const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
+        const int  k_first = ATPhys::phi_first(phi_per);
+
         // Boundary conditions for aux — r-direction
         #pragma omp parallel for collapse(2)
         for (int j = 1; j < m.jm-1; j++) {
-            for (int k = 1; k < m.km-1; k++) {
+            for (int k = k_first; k < m.km-1; k++) {
                 m.aux_u.x[0][j][k]      = c43 * m.aux_u.x[1][j][k]      - c13 * m.aux_u.x[2][j][k];
                 m.aux_u.x[m.im-1][j][k] = c43 * m.aux_u.x[m.im-2][j][k] - c13 * m.aux_u.x[m.im-3][j][k];
                 m.aux_v.x[0][j][k]      = c43 * m.aux_v.x[1][j][k]      - c13 * m.aux_v.x[2][j][k];
@@ -122,15 +131,17 @@ public:
                 const double num2      = inv_rm2 * inv_dthe2;
                 const double num3      = inv_rm2sinthe2 * inv_dphi2;
 
-                for (int k = 1; k < m.km-1; k++) {
+                for (int k = k_first; k < m.km-1; k++) {
+                    const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+                    const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
                     const double du_dr   = ((m.aux_u.x[i+1][j][k] - m.aux_u.x[i-1][j][k])) * inv_2dr;
                     const double dv_dthe = ((m.aux_v.x[i][j+1][k] - m.aux_v.x[i][j-1][k])) * inv_2dthe * inv_rm;
-                    const double dw_dphi = ((m.aux_w.x[i][j][k+1] - m.aux_w.x[i][j][k-1])) * inv_2dphi * inv_rmsinthe;
+                    const double dw_dphi = ((m.aux_w.x[i][j][ke] - m.aux_w.x[i][j][kw])) * inv_2dphi * inv_rmsinthe;
 
                     m.p_dyn.x[i][j][k] =
                         ((m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k]) * num1
                        + (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k]) * num2
-                       + (m.p_dyn.x[i][j][k+1] + m.p_dyn.x[i][j][k-1]) * num3
+                       + (m.p_dyn.x[i][j][ke] + m.p_dyn.x[i][j][kw]) * num3
                        - (du_dr + dv_dthe + dw_dphi)) * inv_denom;
                 }
             }
@@ -158,6 +169,10 @@ public:
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < m.im; i++) {
             for (int j = 0; j < m.jm; j++) {
+                if (phi_per) {      // k = 0 was relaxed above; km-1 is its copy
+                    m.p_dyn.x[i][j][m.km-1] = m.p_dyn.x[i][j][0];
+                    continue;
+                }
                 m.p_dyn.x[i][j][0]      = c43 * m.p_dyn.x[i][j][1]      - c13 * m.p_dyn.x[i][j][2];
                 m.p_dyn.x[i][j][m.km-1] = c43 * m.p_dyn.x[i][j][m.km-2] - c13 * m.p_dyn.x[i][j][m.km-3];
                 m.p_dyn.x[i][j][0]      = m.p_dyn.x[i][j][m.km-1]

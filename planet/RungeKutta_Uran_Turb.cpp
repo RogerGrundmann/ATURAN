@@ -140,6 +140,11 @@ void cUranusModel::RungeKuttaUran(){
     const double t_min = t_min_K() / t_ref;
     const double t_max = t_max_K() / t_ref;
 
+    // ATURAN_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is integrated like every
+    // other cell (RHSUran takes its phi neighbours round the ring); k = km-1 is its copy, written
+    // by bcPhi after the step. With 0 the loops run k = 1..km-2, as before.
+    const int k_first = ATPhys::phi_first(ATPhys::phi_periodic<cUranusModel>());
+
     /*
      * FOUR BARRIER-SEPARATED STAGES, which is the whole point of this file.
      *
@@ -201,7 +206,7 @@ void cUranusModel::RungeKuttaUran(){
             geo.inv_dthe2 = inv_dthe2;
             geo.inv_dphi2 = inv_dphi2;
 
-                for(int k = 1; k < km-1; k++)
+                for(int k = k_first; k < km-1; k++)
                     cUranusModel::RHSUran(i, j, k, geo);
             }
         }
@@ -210,7 +215,7 @@ void cUranusModel::RungeKuttaUran(){
         #pragma omp parallel for collapse(2) schedule(static)
         for(int i = 1; i < im-1; i++){
             for(int j = 1; j < jm-1; j++){
-                for(int k = 1; k < km-1; k++){
+                for(int k = k_first; k < km-1; k++){
                     acc_t.x[i][j][k] = (stage == 0) ? wgt * rhs_t.x[i][j][k]
                                        : acc_t.x[i][j][k] + wgt * rhs_t.x[i][j][k];
                     acc_u.x[i][j][k] = (stage == 0) ? wgt * rhs_u.x[i][j][k]
@@ -286,7 +291,7 @@ void cUranusModel::RungeKuttaUran(){
     #pragma omp parallel for collapse(2) schedule(static)
     for(int i = 1; i < im-1; i++){
         for(int j = 1; j < jm-1; j++){
-            for(int k = 1; k < km-1; k++){
+            for(int k = k_first; k < km-1; k++){
                 t.x[i][j][k] = AtomUtils::clamp(
                     tn.x[i][j][k] + dt * acc_t.x[i][j][k] / 6.0, t_min, t_max);
                 u.x[i][j][k] = un.x[i][j][k] + dt * acc_u.x[i][j][k] / 6.0;

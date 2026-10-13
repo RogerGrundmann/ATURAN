@@ -116,9 +116,14 @@ void cUranusModel::writeResults(){
 */
         }
     }
+    // The seam meridian is reconstructed here once more before the files are written -- in the
+    // STATE, not in a copy. With ATURAN_BC_PHI_PERIODIC=1 that meridian is an integrated cell and
+    // k = km-1 already is its copy, so there is nothing to reconstruct and the block is skipped.
+    const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
     #pragma omp parallel for
     for(int i = 0; i < im; i++){
         for(int j = 0; j < jm; j++){
+            if(phi_per) continue;
             t.x[i][j][0] = c43 * t.x[i][j][1] - c13 * t.x[i][j][2];
             t.x[i][j][km-1] = c43 * t.x[i][j][km-2] - c13 * t.x[i][j][km-3];
             t.x[i][j][0] = t.x[i][j][km-1] =(t.x[i][j][0] + t.x[i][j][km-1])/ 2.;

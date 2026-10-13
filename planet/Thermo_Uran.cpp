@@ -52,11 +52,17 @@ void cUranusModel::Latent_Heat(){
     const double inv_2dr        = 1.0 / (2.0 * dr);
     const double inv_L_atm2     = 1.0 / (L_atm * L_atm);
 
+    // ATURAN_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is computed like any other.
+    const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
+    const int  k_first = ATPhys::phi_first(phi_per);
+
     #pragma omp parallel for schedule(static)
     for(int j = 1; j < jm-1; j++){
         const double sinthe = sin(the.z[j]);
 
-        for(int k = 1; k < km-1; k++){
+        for(int k = k_first; k < km-1; k++){
+            const int kw = ATPhys::phi_wrap(phi_per, k-1, km);
+            const int ke = ATPhys::phi_wrap(phi_per, k+1, km);
             for(int i = im-2; i >= 1; i--){
                 const double rm       = metricRadius(rad.z[i]);
                 const double rmsinthe = rm * sinthe;
@@ -88,19 +94,19 @@ void cUranusModel::Latent_Heat(){
 
                 const double dtdr   = (t.x[i+1][j][k]   - t.x[i-1][j][k])   * inv_2dr;
                 const double dtdthe = (t.x[i][j+1][k]   - t.x[i][j-1][k])   * inv_2rm_dthe;
-                const double dtdphi = (t.x[i][j][k+1]   - t.x[i][j][k-1])   * inv_2rmsinthe_dphi;
+                const double dtdphi = (t.x[i][j][ke]   - t.x[i][j][kw])   * inv_2rmsinthe_dphi;
 
                 const double dh2odr   = (h2o.x[i+1][j][k] - h2o.x[i-1][j][k]) * inv_2dr;
                 const double dh2odthe = (h2o.x[i][j+1][k] - h2o.x[i][j-1][k]) * inv_2rm_dthe;
-                const double dh2odphi = (h2o.x[i][j][k+1] - h2o.x[i][j][k-1]) * inv_2rmsinthe_dphi;
+                const double dh2odphi = (h2o.x[i][j][ke] - h2o.x[i][j][kw]) * inv_2rmsinthe_dphi;
 
                 const double dh2sdr   = (h2s.x[i+1][j][k] - h2s.x[i-1][j][k]) * inv_2dr;
                 const double dh2sdthe = (h2s.x[i][j+1][k] - h2s.x[i][j-1][k]) * inv_2rm_dthe;
-                const double dh2sdphi = (h2s.x[i][j][k+1] - h2s.x[i][j][k-1]) * inv_2rmsinthe_dphi;
+                const double dh2sdphi = (h2s.x[i][j][ke] - h2s.x[i][j][kw]) * inv_2rmsinthe_dphi;
 
                 const double dnh3dr   = (nh3.x[i+1][j][k] - nh3.x[i-1][j][k]) * inv_2dr;
                 const double dnh3dthe = (nh3.x[i][j+1][k] - nh3.x[i][j-1][k]) * inv_2rm_dthe;
-                const double dnh3dphi = (nh3.x[i][j][k+1] - nh3.x[i][j][k-1]) * inv_2rmsinthe_dphi;
+                const double dnh3dphi = (nh3.x[i][j][ke] - nh3.x[i][j][kw]) * inv_2rmsinthe_dphi;
 
                 const double dtemp = dtdr   + dtdthe   + dtdphi;
                 const double dh2o  = dh2odr + dh2odthe + dh2odphi;

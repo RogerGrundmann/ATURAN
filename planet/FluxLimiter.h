@@ -100,8 +100,14 @@ void FluxLimiter<Planet>::nh4sh()
     const double dphi = m.dphi;
     constexpr double eps = 1.0e-12;
 
+    // <TAG>_BC_PHI_PERIODIC (ATPhys.h): with 1 the seam meridian k = 0 is limited like any other
+    // cell and the phi neighbours go round the ring; with 0 the loop and the neighbours are the
+    // old ones.
+    const bool phi_per = ATPhys::phi_periodic<Planet>();
+    const int  k_first = ATPhys::phi_first(phi_per);
+
     #pragma omp parallel for collapse(3) schedule(static)
-    for(int k = 1; k < km-1; k++){
+    for(int k = k_first; k < km-1; k++){
         for(int j = 1; j < jm-1; j++){
             for(int i = 1; i < im-1; i++){
 
@@ -110,8 +116,8 @@ void FluxLimiter<Planet>::nh4sh()
                 const double q_rm = m.nh4sh.x[i-1][j][k];
                 const double q_tp = m.nh4sh.x[i][j+1][k];
                 const double q_tm = m.nh4sh.x[i][j-1][k];
-                const double q_pp = m.nh4sh.x[i][j][k+1];
-                const double q_pm = m.nh4sh.x[i][j][k-1];
+                const double q_pp = m.nh4sh.x[i][j][ATPhys::phi_wrap(phi_per, k+1, km)];
+                const double q_pm = m.nh4sh.x[i][j][ATPhys::phi_wrap(phi_per, k-1, km)];
 
                 const double u = m.u.x[i][j][k];
                 const double v = m.v.x[i][j][k];
@@ -167,7 +173,8 @@ void FluxLimiter<Planet>::nh4sh()
                     const double denom = df + (df >= 0.0 ? eps : -eps);
                     const double r = (w >= 0.0)
                         ? db / denom
-                        : ((k+2 < km ? m.nh4sh.x[i][j][k+2] : q_pp) - q_pp) / denom;
+                        : ((phi_per ? m.nh4sh.x[i][j][ATPhys::phi_wrap(true, k+2, km)]
+                                    : (k+2 < km ? m.nh4sh.x[i][j][k+2] : q_pp)) - q_pp) / denom;
                     corr += (1.0 - TVD::superbee_phi(r)) * abs(w) * inv_rmsinthe * (df - db) / (2.0 * dphi);
                 }
 

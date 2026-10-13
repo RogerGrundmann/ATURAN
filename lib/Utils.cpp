@@ -209,6 +209,16 @@ void AtomUtils::load_map_from_file(const std::string& fn, std::map<float, float>
 
 
 // ============================================================================
+// The phi seam of the Shapiro filter. The longitude grid carries the same meridian twice, at
+// k = 0 and k = km-1, and the "periodic wrap" below takes each of the two for the other's
+// neighbour: at k = 0 the filter reads km-1 (itself) where its west neighbour is km-2.
+// With the flag set (the model does it when <TAG>_BC_PHI_PERIODIC=1) the ring is closed over
+// the km-1 distinct meridians and k = km-1 is written as the copy of k = 0.
+// ============================================================================
+static bool g_phi_seam_periodic = false;
+void AtomUtils::set_phi_seam_periodic(bool on){ g_phi_seam_periodic = on; }
+
+// ============================================================================
 // Shapiro (1-2-1) wiggle-damping filter — Array (3-D) overload
 // ============================================================================
 void AtomUtils::damp_wiggles(Array& field,
@@ -239,18 +249,22 @@ void AtomUtils::damp_wiggles(Array& field,
                     for (int k = 0; k < km; ++k)
                         tmp[idx(i,j,k)] = field.x[i][j][k];
 
+            const bool seam = g_phi_seam_periodic && km > 2;
+            const int  k_end = seam ? km - 1 : km;
+
             #pragma omp parallel for collapse(2) schedule(static)
             for (int i = 0; i < im; ++i) {
                 for (int j = 0; j < jm; ++j) {
-                    for (int k = 0; k < km; ++k) {
+                    for (int k = 0; k < k_end; ++k) {
                         if (!in_fluid(i, j, k)) continue;
-                        const int km1 = (k - 1 + km) % km;
-                        const int kp1 = (k + 1)      % km;
+                        const int km1 = seam ? (k == 0      ? km - 2 : k - 1) : (k - 1 + km) % km;
+                        const int kp1 = seam ? (k == km - 2 ? 0      : k + 1) : (k + 1)      % km;
                         const double v_km1 = in_fluid(i, j, km1) ? tmp[idx(i,j,km1)] : tmp[idx(i,j,k)];
                         const double v_kp1 = in_fluid(i, j, kp1) ? tmp[idx(i,j,kp1)] : tmp[idx(i,j,k)];
                         field.x[i][j][k] = tmp[idx(i,j,k)]
                             + coeff * (v_km1 - 2.0 * tmp[idx(i,j,k)] + v_kp1);
                     }
+                    if (seam) field.x[i][j][km-1] = field.x[i][j][0];
                 }
             }
         }
@@ -329,16 +343,20 @@ void AtomUtils::damp_wiggles(Array_2D& field,
                 for (int k = 0; k < km; ++k)
                     tmp[j * km + k] = field.y[j][k];
 
+            const bool seam = g_phi_seam_periodic && km > 2;
+            const int  k_end = seam ? km - 1 : km;
+
             #pragma omp parallel for schedule(static)
             for (int j = 0; j < jm; ++j) {
-                for (int k = 0; k < km; ++k) {
-                    const int km1 = (k - 1 + km) % km;
-                    const int kp1 = (k + 1)      % km;
+                for (int k = 0; k < k_end; ++k) {
+                    const int km1 = seam ? (k == 0      ? km - 2 : k - 1) : (k - 1 + km) % km;
+                    const int kp1 = seam ? (k == km - 2 ? 0      : k + 1) : (k + 1)      % km;
                     field.y[j][k] = tmp[j * km + k]
                         + coeff * (tmp[j * km + km1]
                                  - 2.0 * tmp[j * km + k]
                                  + tmp[j * km + kp1]);
                 }
+                if (seam) field.y[j][km-1] = field.y[j][0];
             }
         }
 
