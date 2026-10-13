@@ -1276,6 +1276,13 @@ private:
     std::vector<double> buoy_ref_level;
     Array p_hydro;               // hydrostatic pressure perturbation
 
+    // ATURAN_METRIC_SPLIT (2026-10-13; DEFAULT 1 on the user's word, 0 restores): the radial metric
+    // term (v2 + w2)/r of rhs_u is carried by p_hydro as well -- ATOM_Precipitation's hydrostatic
+    // split (AtmHydroSplit.h) applied to the other radial body force. See
+    // computeHydrostaticPressure().
+    static bool metric_split(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_METRIC_SPLIT"); return e ? atoi(e) != 0 : true; }();
+        return v; }
     void computeBuoyancyRefLevel();
     void computeHydrostaticPressure();
     Array rho_mix;              // local mixture density from ideal gas: p_stat/(R_mix*T)

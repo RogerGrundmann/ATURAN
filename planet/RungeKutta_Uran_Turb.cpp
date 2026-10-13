@@ -85,6 +85,26 @@ void cUranusModel::computeHydrostaticPressure(){
                 const double f = -nd * buoy_scale_local * buoyancy * b;
                 return std::isfinite(f) ? f : 0.0;
             };
+            // ATURAN_METRIC_SPLIT=1: the column integral carries the metric term (v2 + w2)/r as
+            // well, as rhs_u forms it. The pressure solver cannot hold the gradient that balances
+            // a radial body force -- measured on ATNEPT with ATNEPT_UB_DIAG (the balanced initial
+            // p_dyn is 0.39 / 2.73 / 0.19 e-3 m/s per iteration at levels 1 / 20 / 39 after 224
+            // iterations, against a metric term of 3.51 / 3.96 / 4.22), and measured four ways in
+            // ATOM_Precipitation, where neither a line-implicit solve nor a projection in the
+            // loop cured it and the column integral did. With the knob rhs_u drops the term (it
+            // and -dp_hydro/dr cancel by construction), and rhs_v / rhs_w take the horizontal
+            // gradient of p_hydro, which is smaller by the shell's aspect ratio. The buoyancy is
+            // in the integral only while ATURAN_HYDRO_SPLIT carries it (the default here).
+            if(metric_split()){
+                static const bool hs_ = [](){ const char* e = getenv("ATURAN_HYDRO_SPLIT"); return e ? atoi(e) != 0 : true; }();
+                auto f_ = [&](int i)->double{
+                    return (hs_ ? buoy(i) : 0.0)
+                         + (v.x[i][j][k] * v.x[i][j][k] + w.x[i][j][k] * w.x[i][j][k]) / metricRadius(rad.z[i]); };
+                p_hydro.x[0][j][k] = 0.0;
+                for(int i = 1; i < im; i++)
+                    p_hydro.x[i][j][k] = p_hydro.x[i-1][j][k] + 0.5 * (f_(i-1) + f_(i)) * dr;
+                continue;
+            }
             if(!ref_top){
                 p_hydro.x[0][j][k] = 0.0;
                 for(int i = 1; i < im; i++)

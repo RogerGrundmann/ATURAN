@@ -270,8 +270,10 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     double transport_t = u_ijk * dtdr + v_invrm * dtdthe + w_invrs * dtdphi;
 
+    // ATURAN_METRIC_SPLIT=1: the metric term leaves rhs_u, p_hydro balances it (RungeKutta_Uran_Turb.cpp)
+    const double metric_on = metric_split() ? 0.0 : 1.0;
     double transport_u = u_ijk * dudr + v_invrm * dudthe + w_invrs * dudphi
-        - (v_ijk * v_ijk + w_ijk * w_ijk) * inv_rm;
+        - metric_on * (v_ijk * v_ijk + w_ijk * w_ijk) * inv_rm;
     double transport_v = u_ijk * dvdr + v_invrm * dvdthe + w_invrs * dvdphi
         + (u_ijk * v_ijk - w_ijk * w_ijk * cotanthe) * inv_rm;
     double transport_w = u_ijk * dwdr + v_invrm * dwdthe + w_invrs * dwdphi
@@ -667,7 +669,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
                    * (buoy_ref_on != 0 ? (b_raw - buoy_ref_level[i]) : b_raw);
     }
     double dphdthe_term = 0.0, dphdphi_term = 0.0;
-    if(hydro_split != 0){
+    if(hydro_split != 0 || metric_split()){
         dphdthe_term = (p_hydro.x[i][j+1][k] - p_hydro.x[i][j-1][k]) * inv_2dthe * inv_rm;
         dphdphi_term = (p_hydro.x[i][j][ke] - p_hydro.x[i][j][kw]) * inv_2dphi * inv_rmsinthe;
     }
