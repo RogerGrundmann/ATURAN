@@ -469,7 +469,7 @@ void cUranusModel::Run(){
     }
 
     init_temperature();
-    balanceThermalWind();                                               // ATURAN_TW_BALANCE, default off; needs t and the prescribed w
+    balanceThermalWind();                                               // ATURAN_TW_BALANCE (on with ATURAN_GEO_BALANCE); needs t and the prescribed w
     init_PressureStatic();
 
 //    goto Printout;
