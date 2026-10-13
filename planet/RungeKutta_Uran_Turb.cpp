@@ -103,7 +103,7 @@ void cUranusModel::computeHydrostaticPressure(){
                 // metric floor the RHS's table carries: a metric floor has no business in a body
                 // force, and since the term leaves rhs_u altogether nothing has to match it there.
                 const double cor_ = coriolis_split()
-                    ? Coriolis * (L_atm / u_0) * 2.0 * omega * std::abs(sin(the.z[j])) : 0.0;
+                    ? Coriolis * coriolis_scale() * 2.0 * omega * std::abs(sin(the.z[j])) : 0.0;
                 auto f_ = [&](int i)->double{
                     return (hs_ ? buoy(i) : 0.0)
                          + (v.x[i][j][k] * v.x[i][j][k] + w.x[i][j][k] * w.x[i][j][k]) / metricRadius(rad.z[i])

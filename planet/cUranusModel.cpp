@@ -469,6 +469,7 @@ void cUranusModel::Run(){
     }
 
     init_temperature();
+    balanceThermalWind();                                               // ATURAN_TW_BALANCE, default off; needs t and the prescribed w
     init_PressureStatic();
 
 //    goto Printout;
@@ -643,13 +644,16 @@ void cUranusModel::Run(){
     static const int ub_band  = [](){ const char* e = getenv("ATURAN_UB_BAND"); return e ? atoi(e) : 5; }();
     const bool ub_on = ub_every > 0 && im <= UranUb::MAXLEV;
     UranUb::st().on = ub_on;
-    UranUb::st().j_lo = (jm - 1) / 2 - ub_band;
-    UranUb::st().j_hi = (jm - 1) / 2 + ub_band;
+    // ATURAN_UB_LAT=<degrees north> (2026-10-13, default 0): the centre of the band, so that it can
+    // be put where the residuum sits when that is not the equator.
+    static const int ub_lat = [](){ const char* e = getenv("ATURAN_UB_LAT"); return e ? atoi(e) : 0; }();
+    UranUb::st().j_lo = std::max(1,      (jm - 1) / 2 - ub_lat - ub_band);
+    UranUb::st().j_hi = std::min(jm - 2, (jm - 1) / 2 - ub_lat + ub_band);
     enum { UB_RK_RESET = 0, UB_RK_REST, UB_FILTER, UB_BC, UB_N };
     static const char* ub_name[UB_N] = { "RK reset", "RK rest", "filter on u", "BC" };
     static const char* ub_term[UranUb::NTERM] = { "RK -dp/dr", "RK +(v2+w2)/r", "RK -advection", "RK diffusion",
         "RK Coriolis", "RK centrifugal", "RK buoyancy", "RK sponge" };
-    static const char* ub_reg[UranUb::NREG] = { "whole level", "equatorial band" };
+    static const char* ub_reg[UranUb::NREG] = { "whole level", "latitude band (ATURAN_UB_LAT, default the equator)" };
     typedef std::vector<std::vector<double>> ub_tab;                       // [region][level]
     std::vector<ub_tab> ub_sum(UB_N, ub_tab(UranUb::NREG, std::vector<double>(im, 0.0)));
     std::vector<ub_tab> ub_tsum(UranUb::NTERM, ub_tab(UranUb::NREG, std::vector<double>(im, 0.0)));

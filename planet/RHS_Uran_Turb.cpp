@@ -258,7 +258,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
 
     // Non-dimensional scaling factors (velocities = v/u_0, lengths = r/L_atm)
     const double scale_p   = 1.0e5 / (r_mix * u_0 * u_0);
-    const double scale_Cor = L_atm / u_0;
+    const double scale_Cor = coriolis_scale();             // L_atm / u_0; ATURAN_CORIOLIS_FULL: L_atm in metres
     const double scale_cen = L_atm * L_atm / (u_0 * u_0);
 
 

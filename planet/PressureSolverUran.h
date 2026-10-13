@@ -56,6 +56,17 @@ public:
         const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
         const int  k_first = ATPhys::phi_first(phi_per);
 
+        // ATURAN_PRESS_CONSISTENT (2026-10-13; default follows ATURAN_GEO_BALANCE, which is on): two things
+        // this solver does not share with the momentum equations. (1) rhs_* apply scale_p =
+        // 1e5 / (r_mix u_0^2) to grad p_dyn, so the Poisson equation is scale_p lap p = div(aux);
+        // the source below carries no 1 / scale_p (5.96 on this planet). (2) The stencil uses
+        // rad.z, the unit shell, where the momentum equations use the metric radius (113 times
+        // larger): the horizontal weights are that much off. A pressure that balances a
+        // horizontal force is a solution of the momentum equations and not of this solver's,
+        // which then relaxes it away. With 1 both follow the momentum equations.
+        const bool consistent = cUranusModel::press_consistent();
+        const double src_scale = consistent ? (m.r_mix * m.u_0 * m.u_0) / 1.0e5 : 1.0;
+
         // Boundary conditions for aux — r-direction
         #pragma omp parallel for collapse(2)
         for (int j = 1; j < m.jm-1; j++) {
@@ -115,7 +126,8 @@ public:
         // k-plane and reads only planes it does not write, so none of them has this problem.
         for (int i = 1; i < m.im-1; i++) {
             for (int j = 1; j < m.jm-1; j++) {
-                const double rm             = m.rad.z[i];
+                // ATURAN_PRESS_CONSISTENT: the metric radius, as the momentum equations use it
+                const double rm             = consistent ? m.metricRadius(m.rad.z[i]) : m.rad.z[i];
                 const double rm2            = rm * rm;
                 const double sinthe         = sinthe_table[j];
                 const double inv_rm         = 1.0 / rm;
@@ -142,7 +154,7 @@ public:
                         ((m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k]) * num1
                        + (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k]) * num2
                        + (m.p_dyn.x[i][j][ke] + m.p_dyn.x[i][j][kw]) * num3
-                       - (du_dr + dv_dthe + dw_dphi)) * inv_denom;
+                       - src_scale * (du_dr + dv_dthe + dw_dphi)) * inv_denom;
                 }
             }
         }

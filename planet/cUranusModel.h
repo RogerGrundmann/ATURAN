@@ -1290,6 +1290,38 @@ private:
     static bool coriolis_split(){
         static const bool v = [](){ const char* e = getenv("ATURAN_CORIOLIS_SPLIT"); return e ? atoi(e) != 0 : true; }();
         return v && metric_split(); }
+    // ATURAN_CORIOLIS_FULL (2026-10-13; default follows ATURAN_GEO_BALANCE): the Coriolis force with its full
+    // nondimensional scale. The momentum equations multiply it by L_atm / u_0 with L_atm in
+    // KILOMETRES (225 / 100 = 2.25); the scale of du*/dt* = (L / u_0^2) a is L in METRES over u_0
+    // (2250). MEASURED with ATURAN_VBUDGET (ATJUP/satchk/giants/UR50): under the lid the Coriolis
+    // term is 20-70 times smaller than the pressure and the metric term it should balance. ALONE
+    // it does harm: at full scale the prescribed jets and the temperature field are far from
+    // geostrophic balance (config Coriolis 1000, UR50c: v reaches 7.8 m/s in 224 iterations),
+    // which is why it comes with the balanced start of ATURAN_GEO_BALANCE.
+    // ATURAN_GEO_BALANCE (2026-10-13; DEFAULT 1 on the user's word, 0 restores byte-identically): the
+    // geostrophically balanced start, option (A) of the user's choice. It switches on four things,
+    // each of which keeps its own knob:
+    //   ATURAN_TW_BALANCE 1      barotropic jets: the wind of each column's jet level at every
+    //                            depth, plus the thermal-wind shear of the isothermal top
+    //   ATURAN_CORIOLIS_FULL 1   the Coriolis force at its full nondimensional scale
+    //   ATURAN_PDYN_GEO 1        p_dyn starts as the barotropic pressure that balances the
+    //                            Coriolis and metric forces of that wind in the meridional equation
+    //   ATURAN_PRESS_CONSISTENT 1  the model's own pressure solver takes the metric radius and
+    //                            the pressure scale of the momentum equation, so that this
+    //                            pressure is a solution of its equation and not eroded by it
+    static bool geo_balance(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_GEO_BALANCE"); return e ? atoi(e) != 0 : true; }();
+        return v; }
+    static bool knob_or_geo(const char* name){ const char* e = getenv(name); return e ? atoi(e) != 0 : geo_balance(); }
+    static bool coriolis_full(){ static const bool v = knob_or_geo("ATURAN_CORIOLIS_FULL"); return v; }
+    static bool pdyn_geo(){ static const bool v = knob_or_geo("ATURAN_PDYN_GEO"); return v; }
+    static bool press_consistent(){ static const bool v = knob_or_geo("ATURAN_PRESS_CONSISTENT"); return v; }
+    std::vector<int> tw_anchor_i;        // [j*km + k] the level balanceThermalWind() anchored each column at
+    double coriolis_scale() const { return (coriolis_full() ? L_atm * 1.0e3 : L_atm) / u_0; }
+    // ATURAN_TW_BALANCE=<strength> (2026-10-13; default 1 with ATURAN_GEO_BALANCE, else 0): the zonal wind is rebuilt in
+    // thermal-wind balance with the model's own temperature. Ported from ATOM_Precipitation
+    // (VelocityInitializer.h, balance_thermal_wind). See balanceThermalWind().
+    void balanceThermalWind();
     void computeBuoyancyRefLevel();
     void computeHydrostaticPressure();
     Array rho_mix;              // local mixture density from ideal gas: p_stat/(R_mix*T)

@@ -71,6 +71,82 @@ void cUranusModel::init_temperature(){
 /*
 *
 */
+/*
+ * ATURAN_TW_BALANCE=<strength>: THE ZONAL WIND IN THERMAL-WIND BALANCE WITH THE TEMPERATURE.
+ * Default 1 with ATURAN_GEO_BALANCE (the default), else 0. Ported from ATOM_Precipitation (VelocityInitializer.h, balance_thermal_wind),
+ * whose note gives the reason it is an initial condition: geostrophic adjustment takes ~1/f,
+ * tens of thousands of iterations, and cannot be waited for.
+ *
+ * theta is the colatitude and w the zonal wind (east positive), so
+ *
+ *     dw/dz = + g / (a f T) * dT/dtheta,     f = 2 omega cos(theta)
+ *
+ * The wind at the ANCHOR level is kept (ATURAN_TW_ANCHOR=<level>; default each column's jet
+ * level, where the prescribed |w| is largest; ATOM anchors at the surface) and the shear the model's own
+ * temperature implies is integrated away from it, trapezoid in height, at the given strength.
+ * Tapered out towards the equator with sin2(lat) / (sin2(lat) + sin2(lat_min)), lat_min =
+ * ATURAN_TW_LATMIN (15 deg), because f -> 0 there; capped at ATURAN_TW_WMAX (400 m/s). Only w
+ * is written (and wn); v and u are left alone.
+ */
+void cUranusModel::balanceThermalWind(){
+    static const double s = [](){ const char* e = getenv("ATURAN_TW_BALANCE"); return e ? atof(e) : (geo_balance() ? 1.0 : 0.0); }();
+    if(s == 0.0) return;
+    static const double lat_min_deg = [](){ const char* e = getenv("ATURAN_TW_LATMIN"); return e ? atof(e) : 15.0; }();
+    static const double w_max = [](){ const char* e = getenv("ATURAN_TW_WMAX"); return e ? atof(e) : 400.0; }();
+    static const int anchor_env = [](){ const char* e = getenv("ATURAN_TW_ANCHOR"); return e ? atoi(e) : -1; }();
+    // the anchor: a fixed level when the knob names one, otherwise each column's JET LEVEL, the
+    // level where the prescribed |w| is largest (the initialiser puts the measured wind there)
+    const bool jet_anchor = !(anchor_env >= 0 && anchor_env < im);
+    tw_anchor_i.assign(jm * km, im - 1);
+    const double s2_min = std::pow(std::sin(lat_min_deg * M_PI / 180.0), 2);
+    const double dz = L_atm * 1.0e3 * dr;                           // layer thickness [m]
+    const double w_lim = w_max / u_0;
+
+    long n_cols = 0, n_capped = 0;
+    double worst_dw = 0.0;
+    #pragma omp parallel for collapse(2) schedule(static) reduction(+:n_cols,n_capped) reduction(max:worst_dw)
+    for(int j = 1; j < jm-1; j++){
+        for(int k = 0; k < km; k++){
+            const double slat = std::cos(the.z[j]);                 // sin(latitude)
+            const double f = 2.0 * omega * slat;
+            if(f == 0.0) continue;
+            const double wgt = (slat * slat) / (slat * slat + s2_min);
+            // shear at a level [(m/s)/m]
+            auto shear = [&](int i)->double{
+                const double T = t.x[i][j][k] * t_ref;
+                if(!(T > 0.0)) return 0.0;
+                const double dTdthe = (t.x[i][j+1][k] - t.x[i][j-1][k]) * t_ref / (2.0 * dthe);
+                const double a_m = metricRadius(rad.z[i]) * L_atm * 1.0e3;
+                const double sh = g * dTdthe / (a_m * f * T);
+                return std::isfinite(sh) ? sh : 0.0; };
+            int ia = anchor_env;
+            if(jet_anchor){
+                ia = 0;
+                for(int i = 1; i < im; i++) if(std::fabs(w.x[i][j][k]) > std::fabs(w.x[ia][j][k])) ia = i;
+            }
+            tw_anchor_i[j * km + k] = ia;
+            const double w0 = w.x[ia][j][k];
+            auto put = [&](int i, double acc){
+                double dw = s * wgt * acc;                          // [m/s]
+                if(!std::isfinite(dw)) dw = 0.0;
+                double wnew = w0 + dw / u_0;
+                if(std::fabs(wnew) > w_lim){ wnew = (wnew > 0.0 ? w_lim : -w_lim); n_capped++; }
+                if(std::fabs(dw) > worst_dw) worst_dw = std::fabs(dw);
+                w.x[i][j][k] = wnew; wn.x[i][j][k] = wnew; };
+            double acc = 0.0;
+            for(int i = ia + 1; i < im; i++){ acc += 0.5 * (shear(i-1) + shear(i)) * dz; put(i, acc); }
+            acc = 0.0;
+            for(int i = ia - 1; i >= 0; i--){ acc -= 0.5 * (shear(i+1) + shear(i)) * dz; put(i, acc); }
+            n_cols++;
+        }
+    }
+    double wmx = 0.0, wmn = 0.0;
+    for(int i = 0; i < im; i++) for(int j = 0; j < jm; j++) for(int k = 0; k < km; k++){
+        wmx = std::max(wmx, w.x[i][j][k]); wmn = std::min(wmn, w.x[i][j][k]); }
+    printf("      ATURAN: thermal-wind balance, strength %.3f, anchor %s (level %d at the equator), lat_min %.1f deg: %ld columns, largest shear added %.2f m/s, w now %.2f .. %.2f m/s, capped cells %ld\n",
+           s, jet_anchor ? "each column's jet level" : "fixed level", tw_anchor_i[((jm-1)/2) * km], lat_min_deg, n_cols, worst_dw, wmn * u_0, wmx * u_0, n_capped);
+}
+
 void cUranusModel::init_PressureDynamic(){
     cout << endl << "      ATURAN: init_PressureDynamic" << endl;
 
@@ -91,6 +167,37 @@ void cUranusModel::init_PressureDynamic(){
     //     H2O / NH3 / H2S column                            -0.38 / -0.10 / -0.02 % -> +0.09 / +0.02 / +0.02 %
     // v, w and the temperature extrema agree within 0.5 %, the mean OLR is 0.92 W/m2 in both.
     static const int pdyn_init = [](){ const char* e = getenv("ATURAN_PDYN_INIT"); return e ? atoi(e) : 2; }();
+    // ATURAN_PDYN_GEO=1: THE BAROTROPIC PRESSURE OF A GEOSTROPHIC START. With the radial forces
+    // carried by p_hydro, what is left for p_dyn at the start is the meridional balance: the
+    // Coriolis force and the metric term w2 cot(theta)/r on the zonal wind need a meridional
+    // pressure gradient, the same at every height because the wind below the jet level is. As
+    // rhs_v forms them,
+    //     scale_p / rm * dp/dtheta = Coriolis * scale_Cor * 2 omega cos(theta) w + w2 cot(theta) / rm
+    // integrated from the north pole with the anchor wind of each column (balanceThermalWind),
+    // trapezoid in theta. The centrifugal term of rhs_v is 1e-4 of these and is left out.
+    if(pdyn_geo() && metric_split()){
+        const double scale_p = 1.0e5 / (r_mix * u_0 * u_0);
+        double pmax = 0.0, pmin = 0.0;
+        #pragma omp parallel for schedule(static) reduction(max:pmax) reduction(min:pmin)
+        for(int k = 0; k < km; k++){
+            double g_prev = 0.0, p_ = 0.0;
+            for(int j = 0; j < jm; j++){
+                const int ia = ((int)tw_anchor_i.size() == jm * km) ? tw_anchor_i[j * km + k] : im - 1;
+                const double rm = metricRadius(rad.z[ia]);
+                const double sth = std::max(sinthe_min(), std::abs(sin(the.z[j])));
+                const double cth = cos(the.z[j]);
+                const double wa = w.x[ia][j][k];
+                const double G = (j == 0 || j == jm-1 || sth < 1.0e-6) ? 0.0
+                    : (Coriolis * coriolis_scale() * 2.0 * omega * cth * wa * rm + wa * wa * cth / sth) / scale_p;
+                if(j > 0) p_ += 0.5 * (g_prev + G) * dthe;
+                g_prev = G;
+                for(int i = 0; i < im; i++) p_dyn.x[i][j][k] = p_;
+                pmax = std::max(pmax, p_); pmin = std::min(pmin, p_);
+            }
+        }
+        printf("      ATURAN: init_PressureDynamic: p_dyn is the barotropic pressure that balances Coriolis and metric force of the zonal wind in the meridional equation; %.6f .. %.6f bar (ATURAN_PDYN_GEO=0 starts it at zero)\n", pmin, pmax);
+        return;
+    }
     // With ATURAN_METRIC_SPLIT the metric term is balanced by p_hydro, so a p_dyn that balances it
     // too would be an unopposed force: it starts at zero then.
     if(metric_split() && pdyn_init == 2){
