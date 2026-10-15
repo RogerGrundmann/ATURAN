@@ -74,6 +74,23 @@ void cUranusModel::computeHydrostaticPressure(){
     static const bool nd_km = [](){
         const char* e = getenv("ATURAN_HYDRO_ND_KM"); return e && atoi(e) != 0; }();
     const double nd = 1.0e5 * (L_atm * (nd_km ? 1.0 : 1.0e3)) / (u_0 * u_0);
+    // ATURAN_BUOY_RHO_LEVEL=1 (2026-10-15, DEFAULT with ATURAN_GEO_BALANCE, 0 = as before): the density anomaly is divided by
+    // its LEVEL's mean density, (g L / u_0^2) (rho - rho_level) / rho_level, ATOM_Precipitation's
+    // consistent form (AtmHydroSplit.h), instead of by the constant r_mix, (g L / u_0^2) (rho -
+    // rho_level) / r_mix. With r_mix (3.61 kg/m3) the thermal-wind pressure fades with the density:
+    // near the lid (rho ~0.05) it is ~1/65 of its size, and at init the shear balanceThermalWind
+    // installs above the jet level got ~1/50 of the gradient it needs from p_hydro (79 N, levels
+    // 36-40: +0.09 against +4.7), the rest supplied by the frozen p_baro. b and buoy_ref_level are
+    // both g rho / r_mix in the same units, so (b - ref) / ref is the relative anomaly whatever
+    // unit p_stat carries. Acts only where p_hydro carries the buoyancy (ATURAN_HYDRO_SPLIT, default).
+    // MEASURED (224 it, UEIN224 -> URL224): residuum 0.000116 -> 0.000054, max |v| 0.018 -> 0.015 m/s,
+    // jets, T and OLR unchanged. Tried with it and measured worse, not kept: initialising the wind of
+    // every level from this pressure and dropping the frozen p_baro (ATOM's route in full): the
+    // tropics, where geostrophy is tapered out, are then unbalanced (v 1.7 m/s at 11 N after 224 it,
+    // residuum 0.0055; wip patch ATURAN_rholevel_geo3_2026-10-15).
+    static const bool buoy_rho_level = [](){
+        const char* e = getenv("ATURAN_BUOY_RHO_LEVEL"); return e ? atoi(e) != 0 : geo_balance(); }();
+    const double nd_rel = g * (L_atm * 1.0e3) / (u_0 * u_0);
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 0; j < jm; j++){
@@ -83,7 +100,9 @@ void cUranusModel::computeHydrostaticPressure(){
                 if(!(T > 0.0)) return 0.0;
                 const double b = g * p_stat.x[i][j][k] / (r_mix * R_mix * T * t_ref)
                                - buoy_ref_level[i];
-                const double f = -nd * buoy_scale_local * buoyancy * b;
+                const double f = buoy_rho_level
+                    ? -nd_rel * buoy_scale_local * buoyancy * b / buoy_ref_level[i]
+                    : -nd * buoy_scale_local * buoyancy * b;
                 return std::isfinite(f) ? f : 0.0;
             };
             // ATURAN_METRIC_SPLIT=1: the column integral carries the metric term (v2 + w2)/r as
