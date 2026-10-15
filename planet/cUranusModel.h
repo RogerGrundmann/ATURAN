@@ -849,13 +849,17 @@ private:
 
 // condensate/crystal densities in kg/m³ (Planetary Sciences p. 90, 2010).
 // These are phase-change densities for cloud microphysics — NOT for gas-phase diffusion.
-    double rho_cond_h2    = 0.408;    // liquid hydrogen density in kg/m³
-    double rho_cond_he    = 0.1752;   // liquid helium density in kg/m³
-    double rho_cond_nh3   = 0.7623;   // liquid ammonia density in kg/m³
+    // 2026-10-15: h2, he, nh3, h2s and ch4 held the GAS densities at standard conditions
+    // (0.408, 0.1752, 0.7623, 1.5357, 0.657 kg/m³) under the comment "liquid ... density";
+    // through the Einstein viscosity (ATURAN_EINSTEIN_VISC) that made the CH4 ice near the top a
+    // condensate volume fraction of 1.0-1.6. ATURAN_EINSTEIN_VISC=2 restores the old values there.
+    double rho_cond_h2    = 70.85;    // liquid hydrogen density in kg/m³ at 20 K
+    double rho_cond_he    = 125.0;   // liquid helium density in kg/m³ at 4.2 K
+    double rho_cond_nh3   = 682.0;   // liquid ammonia density in kg/m³ at 240 K
     double rho_cond_nh4sh = 1170.0;   // solid ammonium hydrosulfide density in kg/m³
-    double rho_cond_h2s   = 1.5357;   // liquid hydrogen sulfide density in kg/m³
+    double rho_cond_h2s   = 949.0;   // liquid hydrogen sulfide density in kg/m³ at 213 K
     double rho_cond_h2o   = 1000.0;    // liquid water density in kg/m³
-    double rho_cond_ch4   = 0.657;    // liquid methane density in kg/m³
+    double rho_cond_ch4   = 422.6;    // liquid methane density in kg/m³ at 112 K
 
 // molecular weights
     double m_h2 = 2.016;  // molecular weight of hydrogen in kg/Kmol (molar mass)

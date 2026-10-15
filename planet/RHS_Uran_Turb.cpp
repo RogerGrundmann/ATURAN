@@ -364,12 +364,29 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     double dpdphi_term = dpdphi * scale_p * inv_rmsinthe;
 
     // Einstein viscosity: mu_eff = mu_0*(1+2.5*phi)  =>  re_eff = re/(1+2.5*phi)
-    const double phi =
-          (h2o_cloud.x[i][j][k] + h2o_ice.x[i][j][k]) * r_mix / rho_cond_h2o
-        + (ch4_cloud.x[i][j][k] + ch4_ice.x[i][j][k]) * r_mix / rho_cond_ch4
-        + (h2s_cloud.x[i][j][k] + h2s_ice.x[i][j][k]) * r_mix / rho_cond_h2s
-        + (nh3_cloud.x[i][j][k] + nh3_ice.x[i][j][k]) * r_mix / rho_cond_nh3
-        + nh4sh.x[i][j][k]                            * r_mix / rho_cond_nh4sh;
+    // ATURAN_EINSTEIN_VISC=<0|1|2> (2026-10-15, DEFAULT 0 = no Einstein term, re_eff = re): the
+    // viscosity raised by the condensate volume fraction, re_eff = re / (1 + 2.5 phi). 1 = the term
+    // with the corrected condensate densities, 2 = the term as before, with the gas densities
+    // (byte-identical to the head before). With 2 the CH4 ice near the top made phi 1.0-1.6 and
+    // the viscosity 3.6-4.9 times re's (ATNEPT, 80 N, level 37): the vertical diffusion of the
+    // jet-level bend of the initial wind against the frozen p_baro then drove the high-latitude
+    // poleward v and the radial cell of the pole rows. ATOM_Precipitation has no such term; the
+    // Einstein relation holds for dilute suspensions (phi << 1), which a cloud always is.
+    static const int einstein_ = [](){ const char* e = getenv("ATURAN_EINSTEIN_VISC"); return e ? atoi(e) : 0; }();
+    double phi = 0.0;
+    if(einstein_ == 1){
+        phi = (h2o_cloud.x[i][j][k] + h2o_ice.x[i][j][k]) * r_mix / rho_cond_h2o
+            + (ch4_cloud.x[i][j][k] + ch4_ice.x[i][j][k]) * r_mix / rho_cond_ch4
+            + (h2s_cloud.x[i][j][k] + h2s_ice.x[i][j][k]) * r_mix / rho_cond_h2s
+            + (nh3_cloud.x[i][j][k] + nh3_ice.x[i][j][k]) * r_mix / rho_cond_nh3
+            + nh4sh.x[i][j][k]                            * r_mix / rho_cond_nh4sh;
+    }else if(einstein_ == 2){
+        phi = (h2o_cloud.x[i][j][k] + h2o_ice.x[i][j][k]) * r_mix / rho_cond_h2o
+            + (ch4_cloud.x[i][j][k] + ch4_ice.x[i][j][k]) * r_mix / 0.657
+            + (h2s_cloud.x[i][j][k] + h2s_ice.x[i][j][k]) * r_mix / 1.5357
+            + (nh3_cloud.x[i][j][k] + nh3_ice.x[i][j][k]) * r_mix / 0.7623
+            + nh4sh.x[i][j][k]                            * r_mix / rho_cond_nh4sh;
+    }
     const double re_eff = re / (1.0 + 2.5 * phi);
 
     // ===== Turbulent (eddy) diffusion from the closure — stage three =====
