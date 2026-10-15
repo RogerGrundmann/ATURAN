@@ -133,6 +133,20 @@ namespace AtomUtils{
                       double strength = 1.0,
                       int passes = 1);
 
+    // 4th-order Shapiro filter (ported 2026-10-14 from ATJUP).
+    // Response 1 - sin^4(kΔ/2): annihilates the 2Δ grid mode as completely as the
+    // 1-2-1, but preserves resolved shear far better (large scales are reduced only
+    // ~(Δ/λ)^4 per pass instead of ~(Δ/λ)^2). Use this for the velocity fields so the
+    // per-iteration filtering does not homogenise the banded zonal-jet shear (∂w/∂θ)
+    // and the GRS wake. Where the 5-point stencil is unavailable (next to a boundary
+    // or a solid cell) it falls back to the gentle 1-2-1. Same axis/surface/wrap
+    // conventions as damp_wiggles: k periodic, j clamped at poles, i clamped.
+    void damp_wiggles_ho(Array& field,
+                         const std::vector<std::vector<int>>* i_surface,
+                         bool along_i, bool along_j, bool along_k,
+                         double strength = 1.0,
+                         int passes = 1);
+
     // 2-D overload (Array_2D, axes j and k only).
     void damp_wiggles(Array_2D& field,
                       bool along_j, bool along_k,

@@ -579,6 +579,19 @@ void cUranusModel::Run(){
     Forces();
     Latent_Heat();
 
+    // ATURAN_PDYN_GEO_BC=1 (2026-10-15, DEFAULT with ATURAN_GEO_BALANCE, 0 = the order before): the three boundary passes
+    // also run BEFORE init_PressureDynamic, so that the balanced start (ATURAN_PDYN_GEO=2) is built
+    // from the fields the first RK stage sees. Without it p_baro is frozen against the raw pole row,
+    // bcTheta then resets t[0] = 4/3 t[1] - 1/3 t[2] and v = w = 0 there, the p_hydro the RK loop
+    // rebuilds moves at j = 0, and the row next to the pole starts unbalanced: at level 38, 89 N
+    // dp_hydro 2.969e-2 at init against 2.633e-2 at stage 0 of iteration 1 (dv/dt +3.4e-3, UDBG1).
+    static const bool pdyn_geo_bc = [](){ const char* e = getenv("ATURAN_PDYN_GEO_BC"); return e ? atoi(e) != 0 : geo_balance(); }();
+    if(pdyn_geo_bc){
+        BC_Uran(*this).bcRadius();
+        BC_Uran(*this).bcTheta();
+        BC_Uran(*this).bcPhi();
+    }
+
     init_PressureDynamic();
 
 //    goto Printout;
@@ -780,7 +793,19 @@ void cUranusModel::Run(){
             if(press_solver_shared()) PressureSolver<cUranusModel>(*this).run();
             else                      PressureSolverUran(*this).run();
             if(ub_on) ub_f1 = ub_force(false);
-            AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
+            // ATURAN_DAMP_P_HORIZ=<s> (2026-10-14, ported from ATNEPT; default 0 with
+            // ATURAN_GEO_BALANCE, 1.0 = the filter before): strength of the two horizontal passes of
+            // the Shapiro filter on p_dyn; the vertical pass is unchanged. On ATNEPT the horizontal
+            // passes halved the balancing meridional gradient in 224 iterations. damp_wiggles
+            // applies its axes in the order k, j, i, so the split keeps the order.
+            static const double damp_p_horiz = [](){
+                const char* e = getenv("ATURAN_DAMP_P_HORIZ"); return e ? atof(e) : (geo_balance() ? 0.0 : 1.0); }();
+            if(damp_p_horiz == 1.0)
+                AtomUtils::damp_wiggles(p_dyn, nullptr, true, true, true);
+            else {
+                if(damp_p_horiz != 0.0) AtomUtils::damp_wiggles(p_dyn, nullptr, false, true, true, damp_p_horiz);
+                AtomUtils::damp_wiggles(p_dyn, nullptr, true, false, false);
+            }
             if(ub_on){
                 const ub_tab ub_f2 = ub_force(false);
                 for(int r_ = 0; r_ < UranUb::NREG; r_++) for(int i = 0; i < im; i++){
@@ -987,14 +1012,41 @@ void cUranusModel::Run(){
         // mean second difference 3.1 times larger at 0.0 than at 1.0, with nothing oscillating.
         static const double damp_t_vert = [](){
             const char* e = getenv("ATURAN_DAMP_T_VERT"); return e ? atof(e) : 0.0; }();
-        AtomUtils::damp_wiggles(t, nullptr, false, true, true);              // horizontal, unchanged
+        // ATURAN_DAMP_T_HORIZ=<strength> (2026-10-15, default 1.0 = the pass of every run before):
+        // the horizontal pass on t. The latitude pass clamps at the poles, j = 0 takes
+        // 0.25 (T[1] - T[0]) every iteration, so the cold pole row under the lid is pulled toward
+        // its neighbour -- the suspect for the polar warming of the GEO_BALANCE stack (UST1).
+        // ATURAN_DAMP_T_J=0 keeps the longitude pass and drops the latitude one. DEFAULT 0 WITH
+        // ATURAN_GEO_BALANCE since 2026-10-15 (1 otherwise). MEASURED (UST1 / UDTJ0_4, 4 it): the
+        // pole row at the lid warmed 0.045 K per iteration with the pass, 3e-5 without, and dv/dt
+        // at 89 N stopped growing (3.4 -> 6.7e-3 in 4 it with it, flat without).
+        static const double damp_t_horiz = [](){
+            const char* e = getenv("ATURAN_DAMP_T_HORIZ"); return e ? atof(e) : 1.0; }();
+        static const bool damp_t_j = [](){
+            const char* e = getenv("ATURAN_DAMP_T_J"); return e ? atoi(e) != 0 : !geo_balance(); }();
+        if(damp_t_horiz != 0.0)
+            AtomUtils::damp_wiggles(t, nullptr, false, damp_t_j, true, damp_t_horiz);
         if(damp_t_vert != 0.0)
             AtomUtils::damp_wiggles(t, nullptr, true, false, false, damp_t_vert);
         tattrib("damp_wiggles(t)");
-        AtomUtils::damp_wiggles(u, nullptr, true, true, true);
+        // ATURAN_VEL_SHAPIRO=<strength> (2026-10-14, ported from ATNEPT; default 0 with
+        // ATURAN_GEO_BALANCE, 1.0 = the pass of every run before): the per-iteration Shapiro pass on
+        // u, v, w; ATURAN_VEL_SHAPIRO_ORDER=4 takes ATJUP's 4th-order pass. On ATNEPT the 1-2-1 pass
+        // took two thirds of the high-latitude jets in 224 iterations and the 4th-order one still
+        // moved the corners of the piecewise-linear jets. ATJUP runs no pass in its loop by default.
+        static const double vel_shapiro = [](){
+            const char* e = getenv("ATURAN_VEL_SHAPIRO"); return e ? atof(e) : (geo_balance() ? 0.0 : 1.0); }();
+        static const int vel_order = [](){
+            const char* e = getenv("ATURAN_VEL_SHAPIRO_ORDER"); return e ? atoi(e) : 2; }();
+        auto vel_filter = [&](Array& f){
+            if(vel_order == 4) AtomUtils::damp_wiggles_ho(f, nullptr, true, true, true, vel_shapiro);
+            else               AtomUtils::damp_wiggles   (f, nullptr, true, true, true, vel_shapiro); };
+        if(vel_shapiro != 0.0) vel_filter(u);
         ub_mark(UB_FILTER);
-        AtomUtils::damp_wiggles(v, nullptr, true, true, true);
-        AtomUtils::damp_wiggles(w, nullptr, true, true, true);
+        if(vel_shapiro != 0.0){
+            vel_filter(v);
+            vel_filter(w);
+        }
 
         BC_Uran(*this).bcRadius();                                      // extrapolation in i-direction along grid boundaries
         BC_Uran(*this).bcTheta();                                       // extrapolation in j-direction along grid boundaries

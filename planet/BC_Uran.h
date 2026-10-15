@@ -140,6 +140,34 @@ inline void cUranusModel::clampNegativeReport(){
 inline void BC_Uran::bcRadius(){
     BoundaryConditions<cUranusModel>(m).bcRadius();
     m.floorRadialSpecies();
+    // ATURAN_BC_LID_VW=<form> (2026-10-15, DEFAULT 2 WITH ATURAN_GEO_BALANCE, else 0 = the shared form, Neumann
+    // w[im-1] = 4/3 w[im-2] - 1/3 w[im-3], i.e. dw/dr = 0): the lid value of the TANGENTIAL
+    // velocities v, w only; t, the species and u keep theirs. 2 = linear extrapolation
+    // 2 a - b (zero curvature), 3 = the cubic c - 3 b + 3 a. The balanced start carries the
+    // thermal-wind shear of the isothermal top up to the lid; dw/dr = 0 there gives the cell
+    // under the lid a curvature of -2/3 of its shear step, and the molecular diffusion of w
+    // takes it out (79 N, level 39: -0.085 nondimensional at iteration 1, UDBGW48), spinning
+    // the top down against the frozen p_baro. ATOM_Precipitation rejected the cubic lid for
+    // v, w that decay to zero at the top (it overshoots through zero); here they do not.
+    // MEASURED (224 it with PDYN_GEO_BC and DAMP_T_J=0; UGBC224 -> ULVW2_224): residuum 0.000464 ->
+    // 0.000302 (old defaults UGA 0.000297), max |v| 0.088 -> 0.047, the lid jet held (max w
+    // 214.895 -> 214.891 against 213.97 -> 213.11), T and OLR unchanged; 3 the same to 1 %.
+    static const int lid_vw = [](){ const char* e = getenv("ATURAN_BC_LID_VW"); return e ? atoi(e) : (cUranusModel::geo_balance() ? 2 : 0); }();
+    if(lid_vw == 2 || lid_vw == 3){
+        const int a = m.im - 2, b = m.im - 3, c = m.im - 4, l = m.im - 1;
+      #pragma omp parallel for
+        for(int j = 0; j < m.jm; j++){
+            for(int k = 0; k < m.km; k++){
+                if(lid_vw == 2){
+                    m.v.x[l][j][k] = 2.0 * m.v.x[a][j][k] - m.v.x[b][j][k];
+                    m.w.x[l][j][k] = 2.0 * m.w.x[a][j][k] - m.w.x[b][j][k];
+                }else{
+                    m.v.x[l][j][k] = m.v.x[c][j][k] - 3.0 * m.v.x[b][j][k] + 3.0 * m.v.x[a][j][k];
+                    m.w.x[l][j][k] = m.w.x[c][j][k] - 3.0 * m.w.x[b][j][k] + 3.0 * m.w.x[a][j][k];
+                }
+            }
+        }
+    }
 }
 inline void BC_Uran::bcTheta()  { BoundaryConditions<cUranusModel>(m).bcTheta();  }
 inline void BC_Uran::bcPhi()    { BoundaryConditions<cUranusModel>(m).bcPhi();    }

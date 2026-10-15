@@ -321,6 +321,137 @@ void AtomUtils::damp_wiggles(Array& field,
 
 
 // ============================================================================
+// 4th-order Shapiro wiggle-damping filter — Array (3-D) overload
+// (ported 2026-10-14 from ATJUP lib/Utils.cpp unchanged, for ATNEPT_VEL_SHAPIRO_ORDER)
+// ============================================================================
+// Interior 5-point stencil  f - (strength/16)(f_{n-2} -4 f_{n-1} +6 f_n -4 f_{n+1} + f_{n+2}),
+// response 1 - sin^4(kΔ/2): kills the 2Δ grid mode while preserving resolved shear
+// (the plain 1-2-1 in damp_wiggles homogenises the zonal-jet shear when applied every
+// iteration — the same jet spin-down ATOM diagnosed). Where the 5-point stencil is
+// unavailable (a boundary or an adjacent solid cell) it falls back to the 1-2-1.
+void AtomUtils::damp_wiggles_ho(Array& field,
+                                   const std::vector<std::vector<int>>* i_surface,
+                                   bool along_i, bool along_j, bool along_k,
+                                   double strength,
+                                   int passes)
+{
+    const int im = field.im;
+    const int jm = field.jm;
+    const int km = field.km;
+    const double c4 = strength / 16.0;   // 4th-order coefficient
+    const double c2 = strength * 0.25;   // 1-2-1 fallback coefficient
+
+    auto in_fluid = [&](int i, int j, int k) -> bool {
+        if (!i_surface) return true;
+        return i >= std::max((*i_surface)[j][k], 0);
+    };
+
+    std::vector<double> tmp(im * jm * km);
+    auto idx = [&](int i, int j, int k) { return i * jm * km + j * km + k; };
+
+    for (int pass = 0; pass < passes; ++pass) {
+
+        // --- along k (longitude, periodic) ---
+        if (along_k) {
+            for (int i = 0; i < im; ++i)
+                for (int j = 0; j < jm; ++j)
+                    for (int k = 0; k < km; ++k)
+                        tmp[idx(i,j,k)] = field.x[i][j][k];
+
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int i = 0; i < im; ++i) {
+                for (int j = 0; j < jm; ++j) {
+                    // g_phi_seam_periodic (see damp_wiggles above): the ring is the km-1
+                    // distinct meridians and k = km-1 is the copy of k = 0.
+                    const bool seam  = g_phi_seam_periodic && km > 4;
+                    const int  n_k   = seam ? km - 1 : km;
+                    for (int k = 0; k < n_k; ++k) {
+                        if (!in_fluid(i, j, k)) continue;
+                        const int km1 = (k - 1 + n_k) % n_k;
+                        const int kp1 = (k + 1)       % n_k;
+                        const int km2 = (k - 2 + n_k) % n_k;
+                        const int kp2 = (k + 2)       % n_k;
+                        const double c = tmp[idx(i,j,k)];
+                        if (!in_fluid(i,j,km1) || !in_fluid(i,j,kp1)) continue;
+                        if (in_fluid(i,j,km2) && in_fluid(i,j,kp2)) {
+                            const double d4 = tmp[idx(i,j,kp2)] - 4.0 * tmp[idx(i,j,kp1)]
+                                            + 6.0 * c - 4.0 * tmp[idx(i,j,km1)] + tmp[idx(i,j,km2)];
+                            field.x[i][j][k] = c - c4 * d4;
+                        } else {
+                            field.x[i][j][k] = c + c2 * (tmp[idx(i,j,km1)] - 2.0 * c + tmp[idx(i,j,kp1)]);
+                        }
+                    }
+                    if (seam) field.x[i][j][km-1] = field.x[i][j][0];
+                }
+            }
+        }
+
+        // --- along j (latitude, clamped at poles) ---
+        if (along_j) {
+            for (int i = 0; i < im; ++i)
+                for (int j = 0; j < jm; ++j)
+                    for (int k = 0; k < km; ++k)
+                        tmp[idx(i,j,k)] = field.x[i][j][k];
+
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int i = 0; i < im; ++i) {
+                for (int j = 0; j < jm; ++j) {
+                    for (int k = 0; k < km; ++k) {
+                        if (!in_fluid(i, j, k)) continue;
+                        const double c = tmp[idx(i,j,k)];
+                        const bool fm1 = (j - 1 >= 0)      && in_fluid(i, j-1, k);
+                        const bool fp1 = (j + 1 <= jm - 1) && in_fluid(i, j+1, k);
+                        if (!fm1 || !fp1) continue;
+                        const bool fm2 = (j - 2 >= 0)      && in_fluid(i, j-2, k);
+                        const bool fp2 = (j + 2 <= jm - 1) && in_fluid(i, j+2, k);
+                        if (fm2 && fp2) {
+                            const double d4 = tmp[idx(i,j+2,k)] - 4.0 * tmp[idx(i,j+1,k)]
+                                            + 6.0 * c - 4.0 * tmp[idx(i,j-1,k)] + tmp[idx(i,j-2,k)];
+                            field.x[i][j][k] = c - c4 * d4;
+                        } else {
+                            field.x[i][j][k] = c + c2 * (tmp[idx(i,j-1,k)] - 2.0 * c + tmp[idx(i,j+1,k)]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- along i (vertical, clamped at fluid floor and top) ---
+        if (along_i) {
+            for (int i = 0; i < im; ++i)
+                for (int j = 0; j < jm; ++j)
+                    for (int k = 0; k < km; ++k)
+                        tmp[idx(i,j,k)] = field.x[i][j][k];
+
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int j = 0; j < jm; ++j) {
+                for (int k = 0; k < km; ++k) {
+                    const int i_surf = i_surface
+                        ? std::max((*i_surface)[j][k], 0) : 0;
+                    for (int i = i_surf; i < im; ++i) {
+                        const double c = tmp[idx(i,j,k)];
+                        const bool fm1 = (i - 1 >= i_surf);
+                        const bool fp1 = (i + 1 <= im - 1);
+                        if (!fm1 || !fp1) continue;
+                        const bool fm2 = (i - 2 >= i_surf);
+                        const bool fp2 = (i + 2 <= im - 1);
+                        if (fm2 && fp2) {
+                            const double d4 = tmp[idx(i+2,j,k)] - 4.0 * tmp[idx(i+1,j,k)]
+                                            + 6.0 * c - 4.0 * tmp[idx(i-1,j,k)] + tmp[idx(i-2,j,k)];
+                            field.x[i][j][k] = c - c4 * d4;
+                        } else {
+                            field.x[i][j][k] = c + c2 * (tmp[idx(i-1,j,k)] - 2.0 * c + tmp[idx(i+1,j,k)]);
+                        }
+                    }
+                }
+            }
+        }
+
+    } // passes
+}
+
+
+// ============================================================================
 // Shapiro (1-2-1) wiggle-damping filter — Array_2D overload
 // ============================================================================
 void AtomUtils::damp_wiggles(Array_2D& field,

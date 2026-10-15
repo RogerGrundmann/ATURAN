@@ -111,6 +111,9 @@ void cUranusModel::computeHydrostaticPressure(){
                 p_hydro.x[0][j][k] = 0.0;
                 for(int i = 1; i < im; i++)
                     p_hydro.x[i][j][k] = p_hydro.x[i-1][j][k] + 0.5 * (f_(i-1) + f_(i)) * dr;
+                // ATURAN_PDYN_GEO=2: the frozen baroclinic pressure of the balanced start
+                if(!p_baro.empty())
+                    for(int i = 0; i < im; i++) p_hydro.x[i][j][k] += p_baro[((size_t)i * jm + j) * km + k];
                 continue;
             }
             if(!ref_top){

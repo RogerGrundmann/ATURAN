@@ -124,6 +124,56 @@ public:
         //
         // The four boundary loops in this file KEEP their pragmas: each writes one i-, j- or
         // k-plane and reads only planes it does not write, so none of them has this problem.
+        // ATURAN_PRESS_INCR (2026-10-14, ported from ATNEPT; default follows ATURAN_GEO_BALANCE, 0 = the source before): DEFECT-CORRECTION SOURCE. The
+        // source below is div(aux) with aux = rhs + scale_p grad(p_dyn), both differences over
+        // 2 cells, while the operator is the compact 3-point Laplacian: for a p_dyn that already
+        // balances the other forces (rhs = 0) the two differ wherever p_dyn is not smooth, and the
+        // solver moves a balanced pressure -- ATOM_Precipitation records the same pair as div and
+        // grad not adjoint on this grid (PressureSolverAtm.h), uncured there. MEASURED on the
+        // geostrophic start (ATNEPT_VBUDGET / UB_DIAG, NV0f_224): the solver builds a radial
+        // gradient at levels 1-2 near the 60 N jet corner and drives u up linearly. With 1 the
+        // equation is Lc(p_new) = src_scale div(rhs) + Lc(p_old): only what the current p_dyn
+        // leaves unbalanced is projected, and a balanced state is an exact fixed point. rhs_* are
+        // the tendencies of the last stage, computed with this p_dyn; their wall planes are
+        // extrapolated as aux_* are above.
+        static const bool press_incr = [](){ const char* e = getenv("ATURAN_PRESS_INCR"); return e ? atoi(e) != 0 : cUranusModel::geo_balance(); }();
+        std::vector<double> incr_src;
+        if (press_incr) {
+            const int im_ = m.im, jm_ = m.jm, km_ = m.km;
+            incr_src.assign((size_t)im_ * jm_ * km_, 0.0);
+            auto ru = [&](const Array& a, int i, int j, int k) -> double {
+                if (i == 0)       return c43 * a.x[1][j][k]     - c13 * a.x[2][j][k];
+                if (i == im_ - 1) return c43 * a.x[im_-2][j][k] - c13 * a.x[im_-3][j][k];
+                return a.x[i][j][k]; };
+            #pragma omp parallel for collapse(2) schedule(static)
+            for (int i = 1; i < im_-1; i++) {
+                for (int j = 1; j < jm_-1; j++) {
+                    const double rm             = consistent ? m.metricRadius(m.rad.z[i]) : m.rad.z[i];
+                    const double inv_rm         = 1.0 / rm;
+                    const double inv_rmsinthe   = 1.0 / (rm * sinthe_table[j]);
+                    const double inv_rm2        = inv_rm * inv_rm;
+                    const double inv_rm2sinthe2 = inv_rm2 / (sinthe_table[j] * sinthe_table[j]);
+                    const double num1 = 1.0 / (m.dr * m.dr), num2 = inv_rm2 / (m.dthe * m.dthe),
+                                 num3 = inv_rm2sinthe2 / (m.dphi * m.dphi);
+                    const double denom = 2.0 * (num1 + num2 + num3);
+                    for (int k = k_first; k < km_-1; k++) {
+                        const int kw = ATPhys::phi_wrap(phi_per, k-1, km_);
+                        const int ke = ATPhys::phi_wrap(phi_per, k+1, km_);
+                        const double div_rhs =
+                              (ru(m.rhs_u, i+1, j, k) - ru(m.rhs_u, i-1, j, k)) / (2.0 * m.dr)
+                            + (ru(m.rhs_v, i, j+1, k) - ru(m.rhs_v, i, j-1, k)) / (2.0 * m.dthe) * inv_rm
+                            + (ru(m.rhs_w, i, j, ke)  - ru(m.rhs_w, i, j, kw))  / (2.0 * m.dphi) * inv_rmsinthe;
+                        const double lc_old =
+                              (m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k]) * num1
+                            + (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k]) * num2
+                            + (m.p_dyn.x[i][j][ke]  + m.p_dyn.x[i][j][kw])  * num3
+                            - denom * m.p_dyn.x[i][j][k];
+                        incr_src[((size_t)i * jm_ + j) * km_ + k] = src_scale * div_rhs + lc_old;
+                    }
+                }
+            }
+        }
+
         for (int i = 1; i < m.im-1; i++) {
             for (int j = 1; j < m.jm-1; j++) {
                 // ATURAN_PRESS_CONSISTENT: the metric radius, as the momentum equations use it
@@ -154,7 +204,8 @@ public:
                         ((m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k]) * num1
                        + (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k]) * num2
                        + (m.p_dyn.x[i][j][ke] + m.p_dyn.x[i][j][kw]) * num3
-                       - src_scale * (du_dr + dv_dthe + dw_dphi)) * inv_denom;
+                       - (press_incr ? incr_src[((size_t)i * m.jm + j) * m.km + k]
+                                     : src_scale * (du_dr + dv_dthe + dw_dphi))) * inv_denom;
                 }
             }
         }

@@ -114,13 +114,23 @@ public:
             }
         }
 
+        // ATURAN_V_INIT_SCALE=<factor> (2026-10-14, ported from ATNEPT; default 0 with
+        // ATURAN_GEO_BALANCE, 1.0 = the cell of every run before): multiplies the prescribed
+        // meridional overturning cell. Nothing balances it on the geostrophic start; on ATNEPT its
+        // diffusion was the only term left in dv/dt at iteration 1.
+        static const double v_init_scale = [](){
+            const char* e = getenv("ATURAN_V_INIT_SCALE"); return e ? atof(e) : (cUranusModel::geo_balance() ? 0.0 : 1.0); }();
+        if(v_init_scale != 1.0)
+            printf("      ATURAN: ATURAN_V_INIT_SCALE = %.4g (prescribed meridional cell scaled)\n", v_init_scale);
+
         // non-dimensionalisation by u_0
         #pragma omp parallel for
         for(int i = 0; i < im; i++){
             for(int k = 0; k < km; k++){
                 for(int j = 0; j < jm; j++){
                     m.u.x[i][j][k] = m.u.x[i][j][k]/m.u_0;
-                    m.v.x[i][j][k] = m.v.x[i][j][k]/m.u_0;
+                    m.v.x[i][j][k] = (v_init_scale == 1.0) ? m.v.x[i][j][k]/m.u_0
+                                                           : v_init_scale * m.v.x[i][j][k]/m.u_0;
                     m.w.x[i][j][k] = m.w.x[i][j][k]/m.u_0;
                 }
             }
