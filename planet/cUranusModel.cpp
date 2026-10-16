@@ -249,7 +249,9 @@ void cUranusModel::printMeridionalBudget(){
         << "     diffusion      Coriolis   centrifugal        dv/dt" << std::endl;
 
     double a_dp=0, a_dph=0, a_tr=0, a_di=0, a_co=0, a_ce=0, a_to=0;
-    for(int j = 1; j < jm-1; j += 10){
+    // every 10th row, plus the five next to each pole (2026-10-16: the residuum sits at 89 S)
+    for(int j = 1; j < jm-1; j++){
+        if(!(j % 10 == 1 || j <= 5 || j >= jm - 6)) continue;
         printf("      %5.0f %9.5f %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e\n",
                90.0 - (double)j, v.x[ib][j][kb] * u_0,
                vbud_dp[j], vbud_dph[j], vbud_trans[j],

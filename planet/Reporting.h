@@ -420,6 +420,34 @@ public:
 
         // The continuity residual first, then the table — this is the original case order.
         print_steady_line(" residuum: continuity equation ", minimum, m.i_res, m.j_res, m.k_res);
+        // ATURAN_RES_PARTS=1 (2026-10-16, print-only): the five parts of the residuum above in the
+        // column of the reported cell (levels i_res-6 .. i_res+3) and in the rows next to it, with
+        // u and v, nondimensional. Written for the residuum at the south pole under the lid.
+        static const bool res_parts = [](){ const char* e_ = getenv("ATURAN_RES_PARTS"); return e_ && atoi(e_) != 0; }();
+        if(res_parts){
+            const int k = m.k_res;
+            auto row_ = [&](int i, int j){
+                const double sinthe = sin(m.the.z[j]);
+                double costhe = cos(m.the.z[j]);
+                if(Planet::costhe_abs() && j > 90) costhe = - costhe;
+                const double rm_met = m.metricRadius(m.rad.z[i]);
+                const double rmsinthe = rm_met * sinthe;
+                const double p1 = (m.u.x[i+1][j][k] - m.u.x[i-1][j][k])/(2. * m.dr);
+                const double p2 = 2. * m.u.x[i][j][k]/rm_met;
+                const double p3 = (m.v.x[i][j+1][k] - m.v.x[i][j-1][k])/(2. * m.dthe)/rm_met;
+                const double p4 = costhe/rmsinthe * m.v.x[i][j][k];
+                const double p5 = (m.w.x[i][j][k+1] - m.w.x[i][j][k-1])/(2. * m.dphi)/rmsinthe;
+                printf("      %3d %4d %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e %12.4e\n",
+                       i, j, m.u.x[i][j][k], m.v.x[i][j][k], p1, p2, p3, p4, p5, p1 + p2 + p3 + p4 + p5); };
+            printf("\n      RES_PARTS: residuum by part at k = %d; i, j, u, v, du/dr, 2u/r, dv/dthe / r, cot v / r, dw/dphi / (r sin), sum\n", k);
+            for(int i = std::max(1, m.i_res - 6); i <= std::min(m.im - 2, m.i_res + 3); i++) row_(i, m.j_res);
+            printf("      RES_PARTS: rows at level i = %d\n", m.i_res);
+            for(int j = std::max(1, m.j_res - 4); j <= std::min(m.jm - 2, m.j_res + 4); j++) row_(m.i_res, j);
+            // the pole row itself and the lid, for the stencil the residuum reads
+            printf("      RES_PARTS: v and u on the pole rows j = 0 / jm-1 and at the lid i = im-1, column j = %d:"
+                   " v[i][0] %.4e v[i][jm-1] %.4e u[im-1] %.4e u[im-2] %.4e\n", m.j_res,
+                   m.v.x[m.i_res][0][k], m.v.x[m.i_res][m.jm-1][k], m.u.x[m.im-1][m.j_res][k], m.u.x[m.im-2][m.j_res][k]);
+        }
         for(int a = 0; a < ne; a++)
             print_steady_line(e[a].name, e[a].val, e[a].i, e[a].j, e[a].k);
 
