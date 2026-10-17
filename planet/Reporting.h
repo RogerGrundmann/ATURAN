@@ -66,7 +66,10 @@
 
 #include "ATPhys.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -420,10 +423,58 @@ public:
 
         // The continuity residual first, then the table — this is the original case order.
         print_steady_line(" residuum: continuity equation ", minimum, m.i_res, m.j_res, m.k_res);
-        // ATURAN_RES_PARTS=1 (2026-10-16, print-only): the five parts of the residuum above in the
-        // column of the reported cell (levels i_res-6 .. i_res+3) and in the rows next to it, with
-        // u and v, nondimensional. Written for the residuum at the south pole under the lid.
-        static const bool res_parts = [](){ const char* e_ = getenv("ATURAN_RES_PARTS"); return e_ && atoi(e_) != 0; }();
+        // <TAG>_RES_FLOOR=<s> (2026-10-17, print-only, default unset = off): the same residual with
+        // sin(theta) floored at s, i.e. in the geometry the momentum equations and the planet's
+        // pressure solver integrate when they clamp the polar metric. The line above uses the
+        // TRUE sine, so poleward of asin(s) it weights cot v / r by cot(theta) where the model
+        // uses cos(theta)/s -- 23x at 89 deg for s = 0.4 (ATNEPT's floor; measured there on
+        // 2026-10-17: pole residuum -1.03e-5 reported, -2.5e-6 in the model's geometry, and the
+        // largest cell moves to the equatorial bottom wall). Prints the maximum in the floored
+        // geometry, then the five parts at both reported cells in both geometries.
+        static const double res_floor = [](){
+            const char* e_ = getenv((std::string(Planet::planet_tag()) + "_RES_FLOOR").c_str());
+            const double s = e_ ? atof(e_) : -1.0;
+            return (s >= 0.0 && s < 1.0) ? s : -1.0; }();
+        if(res_floor >= 0.0){
+            auto parts_ = [&](int i, int j, int k, double fl, double* p){
+                const double sinthe = std::max(fl, std::fabs(sin(m.the.z[j])));
+                double costhe = cos(m.the.z[j]);
+                if(Planet::costhe_abs() && j > 90) costhe = - costhe;
+                const double rm_met = m.metricRadius(m.rad.z[i]);
+                const double rmsinthe = rm_met * sinthe;
+                p[0] = (m.u.x[i+1][j][k] - m.u.x[i-1][j][k])/(2. * m.dr);
+                p[1] = 2. * m.u.x[i][j][k]/rm_met;
+                p[2] = (m.v.x[i][j+1][k] - m.v.x[i][j-1][k])/(2. * m.dthe)/rm_met;
+                p[3] = costhe/rmsinthe * m.v.x[i][j][k];
+                p[4] = (m.w.x[i][j][k+1] - m.w.x[i][j][k-1])/(2. * m.dphi)/rmsinthe;
+                p[5] = p[0] + p[1] + p[2] + p[3] + p[4];
+            };
+            double mx = 0.0, p[6];
+            int ii = 0, jj = 0, kk = 0;
+            for(int i = 1; i < m.im-1; i++)
+                for(int j = 1; j < m.jm-1; j++)
+                    for(int k = 1; k < m.km-1; k++){
+                        parts_(i, j, k, res_floor, p);
+                        if(fabs(p[5]) >= mx){ mx = fabs(p[5]); ii = i; jj = j; kk = k; }
+                    }
+            print_steady_line(" residuum: continuity, floored  ", mx, ii, jj, kk);
+            printf("      RES_FLOOR %.3f: parts du/dr, 2u/r, dv/dthe / r, cot v / r, dw/dphi / (r sin), sum\n", res_floor);
+            const int cell[2][3] = {{m.i_res, m.j_res, m.k_res}, {ii, jj, kk}};
+            for(int c = 0; c < 2; c++)
+                for(int g = 0; g < 2; g++){
+                    parts_(cell[c][0], cell[c][1], cell[c][2], g ? res_floor : 0.0, p);
+                    printf("      %s cell i %d j %d k %d, %s sine: %+.3e %+.3e %+.3e %+.3e %+.3e  sum %+.3e\n",
+                           c ? "floored-max" : "true-max   ", cell[c][0], cell[c][1], cell[c][2],
+                           g ? "floored" : "true   ", p[0], p[1], p[2], p[3], p[4], p[5]);
+                }
+        }
+        // <TAG>_RES_PARTS=1 (ATURAN 2026-10-16, shared since 2026-10-17; print-only): the five parts
+        // of the residuum above in the column of the reported cell (levels i_res-6 .. i_res+3) and
+        // in the rows next to it, with u and v, nondimensional. Written for the residuum at the
+        // south pole under the lid.
+        static const bool res_parts = [](){
+            const char* e_ = getenv((std::string(Planet::planet_tag()) + "_RES_PARTS").c_str());
+            return e_ && atoi(e_) != 0; }();
         if(res_parts){
             const int k = m.k_res;
             auto row_ = [&](int i, int j){
