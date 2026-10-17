@@ -205,6 +205,62 @@ void PressureSolver<Planet>::run(){
     const bool phi_per = ATPhys::phi_periodic<Planet>();
     const int  k_first = ATPhys::phi_first(phi_per);
 
+    // <TAG>_PRESS_INCR (2026-10-17; default 0 = the source before; ATJUP sets it with
+    // ATJUP_GEO_BALANCE): DEFECT-CORRECTION SOURCE, ATNEPT's PRESS_INCR (PressureSolverNept.h) in
+    // this solver. div(aux) = div(rhs) + D(grad p_dyn), and D(grad p) -- two 2-cell differences --
+    // is not the compact operator Lc the sweep inverts. For a p_dyn that balances the other forces
+    // (rhs = 0) the two differ wherever p_dyn is not smooth, so the solver moves a balanced
+    // pressure. With 1 the equation is Lc(p_new) = div(rhs) + Lc(p_old), Lc with the same
+    // wall-aware faces as the sweep: only what the current p_dyn leaves unbalanced is projected,
+    // and a balanced state is an exact fixed point. The source clamp acts on div(rhs) alone.
+    // rhs_* are the tendencies of the last RK stage, computed with this p_dyn.
+    const bool press_incr = ATPhys::env_int(TAG, "PRESS_INCR", 0) != 0 && src_projection != 0;
+    const Array& S_u = press_incr ? m.rhs_u : m.aux_u;
+    const Array& S_v = press_incr ? m.rhs_v : m.aux_v;
+    const Array& S_w = press_incr ? m.rhs_w : m.aux_w;
+    // The wall-normal source at the radial walls. aux_u is zeroed there by the model's
+    // prepareProjectionBoundaries when the lid is rigid; rhs_u is not on every model (ATSAT
+    // extrapolates it with the 3-point cubic, ATJUP leaves it 0). With PRESS_INCR the source reads
+    // rhs_u, so it takes the rigid-lid zero here. Without it, measured 10-17 on ATSAT
+    // (ATSAT_GEO_BALANCE, SGEO224): u under the lid grew x3.7 per 32 it, -0.003 -> -70 m/s by 208.
+    auto S_u_at = [&](int ii, int jj, int kk) -> double {
+        if(press_incr && rigid_lid && (ii == 0 || ii == m.im-1)) return 0.0;
+        return S_u.x[ii][jj][kk]; };
+    std::vector<double> lc_old;
+    if(press_incr){
+        lc_old.assign((size_t)m.im * m.jm * m.km, 0.0);
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int i = 1; i < m.im-1; i++){
+            for(int j = 1; j < m.jm-1; j++){
+                const double rm = m.metricRadius(m.rad.z[i]);
+                const double exp_rm = m.coord_stretching ? 1.0 / (rm + 1.0) : 1.0;
+                const double num1 = exp_rm * exp_rm * inv_dr2;
+                const double num2 = inv_dthe2 / (rm * rm);
+                const double num3 = inv_dphi2 / (rm * rm * sinthe_table[j] * sinthe_table[j]);
+                for(int k = k_first; k < m.km-1; k++){
+                    const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+                    const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+                    const double p0 = m.p_dyn.x[i][j][k];
+                    double l_;
+                    if(press_wall && !m.is_solid(i,j,k)){
+                        l_ = 0.0;
+                        if(!m.is_solid(i+1,j,k)) l_ += num1 * (m.p_dyn.x[i+1][j][k] - p0);
+                        if(!m.is_solid(i-1,j,k)) l_ += num1 * (m.p_dyn.x[i-1][j][k] - p0);
+                        if(!m.is_solid(i,j+1,k)) l_ += num2 * (m.p_dyn.x[i][j+1][k] - p0);
+                        if(!m.is_solid(i,j-1,k)) l_ += num2 * (m.p_dyn.x[i][j-1][k] - p0);
+                        if(!m.is_solid(i,j,ke))  l_ += num3 * (m.p_dyn.x[i][j][ke] - p0);
+                        if(!m.is_solid(i,j,kw))  l_ += num3 * (m.p_dyn.x[i][j][kw] - p0);
+                    } else {
+                        l_ = num1 * (m.p_dyn.x[i+1][j][k] + m.p_dyn.x[i-1][j][k] - 2.0 * p0)
+                           + num2 * (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k] - 2.0 * p0)
+                           + num3 * (m.p_dyn.x[i][j][ke]  + m.p_dyn.x[i][j][kw]  - 2.0 * p0);
+                    }
+                    lc_old[((size_t)i * m.jm + j) * m.km + k] = l_;
+                }
+            }
+        }
+    }
+
     for(int sweep = 0; sweep < n_sweeps; sweep++){
 
       for(int colour = 0; colour < 2; colour++){
@@ -275,8 +331,8 @@ void PressureSolver<Planet>::run(){
 
                         // r direction
                         if(i_in_range && sld_ijk && !m.is_solid(i+1,j,k)){
-                            du_dr = (-3.0 * m.aux_u.x[i][j][k] + 4.0 * m.aux_u.x[i+1][j][k]
-                                     - m.aux_u.x[i+2][j][k]) * inv_2dr;
+                            du_dr = (-3.0 * S_u_at(i,j,k) + 4.0 * S_u_at(i+1,j,k)
+                                     - S_u_at(i+2,j,k)) * inv_2dr;
                             r_flag = true;
                         }
 
@@ -286,23 +342,23 @@ void PressureSolver<Planet>::run(){
                             const bool air_jm1 = !m.is_solid(i,j-1,k);
 
                             if(sld_ijk && air_jp1 && !m.is_solid(i,j+2,k)){
-                                dv_dthe = (-3.0 * m.aux_v.x[i][j][k] + 4.0 * m.aux_v.x[i][j+1][k]
-                                           - m.aux_v.x[i][j+2][k]) * inv_2dthe;
+                                dv_dthe = (-3.0 * S_v.x[i][j][k] + 4.0 * S_v.x[i][j+1][k]
+                                           - S_v.x[i][j+2][k]) * inv_2dthe;
                                 the_flag = true;
                             }
                             if(sld_ijk && air_jm1 && !m.is_solid(i,j-2,k)){
-                                dv_dthe = -(-3.0 * m.aux_v.x[i][j][k] + 4.0 * m.aux_v.x[i][j-1][k]
-                                            - m.aux_v.x[i][j-2][k]) * inv_2dthe;
+                                dv_dthe = -(-3.0 * S_v.x[i][j][k] + 4.0 * S_v.x[i][j-1][k]
+                                            - S_v.x[i][j-2][k]) * inv_2dthe;
                                 the_flag = true;
                             }
                             if((sld_ijk && air_jp1 && m.is_solid(i,j+2,k))
                                || (j == m.jm-2 && !sld_ijk && m.is_solid(i,j+1,k))){
-                                dv_dthe = (m.aux_v.x[i][j+1][k] - m.aux_v.x[i][j][k]) * inv_dthe;
+                                dv_dthe = (S_v.x[i][j+1][k] - S_v.x[i][j][k]) * inv_dthe;
                                 the_flag = true;
                             }
                             if((sld_ijk && air_jm1 && m.is_solid(i,j-2,k))
                                || (j == 1 && sld_ijk && air_jm1)){
-                                dv_dthe = (m.aux_v.x[i][j-1][k] - m.aux_v.x[i][j][k]) * inv_dthe;
+                                dv_dthe = (S_v.x[i][j-1][k] - S_v.x[i][j][k]) * inv_dthe;
                                 the_flag = true;
                             }
                         }
@@ -314,34 +370,34 @@ void PressureSolver<Planet>::run(){
                             const bool air_km1 = !sld_km1;
 
                             if(sld_ijk && air_kp1 && !sld_kp2){
-                                dw_dphi = (-3.0 * m.aux_w.x[i][j][k] + 4.0 * m.aux_w.x[i][j][k+1]
-                                           - m.aux_w.x[i][j][k+2]) * inv_2dphi;
+                                dw_dphi = (-3.0 * S_w.x[i][j][k] + 4.0 * S_w.x[i][j][k+1]
+                                           - S_w.x[i][j][k+2]) * inv_2dphi;
                                 phi_flag = true;
                             }
                             if(sld_ijk && air_km1 && !sld_km2){
-                                dw_dphi = -(-3.0 * m.aux_w.x[i][j][k] + 4.0 * m.aux_w.x[i][j][k-1]
-                                            - m.aux_w.x[i][j][k-2]) * inv_2dphi;
+                                dw_dphi = -(-3.0 * S_w.x[i][j][k] + 4.0 * S_w.x[i][j][k-1]
+                                            - S_w.x[i][j][k-2]) * inv_2dphi;
                                 phi_flag = true;
                             }
                             if((sld_ijk && air_kp1 && sld_kp2)
                                || (k == m.km-2 && !sld_ijk && sld_kp1)){
-                                dw_dphi = (m.aux_w.x[i][j][k+1] - m.aux_w.x[i][j][k]) * inv_dphi;
+                                dw_dphi = (S_w.x[i][j][k+1] - S_w.x[i][j][k]) * inv_dphi;
                                 phi_flag = true;
                             }
                             if((sld_ijk && air_km1 && sld_km2)
                                || (k == 1 && sld_ijk && air_km1)){
-                                dw_dphi = (m.aux_w.x[i][j][k-1] - m.aux_w.x[i][j][k]) * inv_dphi;
+                                dw_dphi = (S_w.x[i][j][k-1] - S_w.x[i][j][k]) * inv_dphi;
                                 phi_flag = true;
                             }
                         }
 
                         // Centred-difference fallbacks.
                         if(!r_flag)
-                            du_dr   = (m.aux_u.x[i+1][j][k] - m.aux_u.x[i-1][j][k]) * inv_2dr;
+                            du_dr   = (S_u_at(i+1,j,k) - S_u_at(i-1,j,k)) * inv_2dr;
                         if(!the_flag)
-                            dv_dthe = (m.aux_v.x[i][j+1][k] - m.aux_v.x[i][j-1][k]) * inv_2dthe;
+                            dv_dthe = (S_v.x[i][j+1][k] - S_v.x[i][j-1][k]) * inv_2dthe;
                         if(!phi_flag)
-                            dw_dphi = (m.aux_w.x[i][j][ke] - m.aux_w.x[i][j][kw]) * inv_2dphi;
+                            dw_dphi = (S_w.x[i][j][ke] - S_w.x[i][j][kw]) * inv_2dphi;
                     }
 
                     double div_src = du_dr   * geo.exp_rm
@@ -375,6 +431,7 @@ void PressureSolver<Planet>::run(){
                     if      (!std::isfinite(div_src)) div_src = 0.0;
                     else if (div_src >  src_max)      div_src =  src_max;
                     else if (div_src < -src_max)      div_src = -src_max;
+                    if(press_incr) div_src += lc_old[((size_t)i * m.jm + j) * m.km + k];
 
                     m.p_dyn.x[i][j][k] = (acc - div_src) / den;
                 } // k
