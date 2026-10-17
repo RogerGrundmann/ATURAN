@@ -245,6 +245,18 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // neither is meaningful without the other.
     static const bool cent_legacy = [](){
         const char* e = getenv("ATURAN_CENT_LEGACY"); return e && atoi(e) != 0; }();
+    // ATURAN_CENTRIFUGAL_MOM (2026-10-17; DEFAULT 0 on the user's word "follow ATOM", 1 restores):
+    // the centrifugal force leaves the momentum equations, as in ATOM_Precipitation, whose
+    // RHS has none (its CentrifugalForce is a diagnostic field only): the centrifugal potential
+    // belongs to the effective gravity. Nothing balanced it here -- the initial pressure leaves
+    // it out, and METRIC_SPLIT / CORIOLIS_SPLIT took the other radial body forces into p_hydro
+    // -- so at the equator its radial part was the only thing driving u: +5e-5 m/s in 224
+    // iterations at every level, and du/dr against the wall u = 0 the largest continuity
+    // residuum in the model's own geometry (ATNEPT NUBW224; with it off, NUBC0_224, u there is
+    // +1e-5 from buoyancy and v, w and the pole residuum are unchanged to three digits). The
+    // diagnostic CentrifugalForce field is untouched. 1 = the config coefficient as before.
+    static const double cent_mom = [](){
+        const char* e = getenv("ATURAN_CENTRIFUGAL_MOM"); return (e && atoi(e) != 0) ? 1.0 : 0.0; }();
     double centrifugal_rad, centrifugal_the;
     if(cent_legacy){
         centrifugal_rad = omega * omega * rm;
@@ -701,7 +713,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         + diffusion_u / re_eff + diffusion_u * nue_t
         - cor_rad_on * Coriolis * scale_Cor * Coriolis_rad     // ATURAN_CORIOLIS_SPLIT: 0 when p_hydro carries it
         // PLUS: the force points away from the axis. See the block where it is formed.
-        + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_rad
+        + (cent_legacy ? -1.0 : +1.0) * centrifugal * cent_mom * scale_cen * centrifugal_rad
         - sponge * u_ijk;
 
     // ATURAN_UB_DIAG (print-only, see UbUran.h): RK4-weighted level sums of each term of rhs_u, per
@@ -719,7 +731,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
             - (u_ijk * dudr + v_invrm * dudthe + w_invrs * dudphi),
             + diffusion_u / re_eff + diffusion_u * nue_t,
             - cor_rad_on * Coriolis * scale_Cor * Coriolis_rad,
-            + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_rad,
+            + (cent_legacy ? -1.0 : +1.0) * centrifugal * cent_mom * scale_cen * centrifugal_rad,
             + buoyancy_u,
             - sponge * u_ijk };
         const bool eq_ = (j >= UranUb::st().j_lo && j <= UranUb::st().j_hi);
@@ -735,7 +747,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         - transport_v
         + diffusion_v / re_eff + diffusion_v * nue_t
         - Coriolis    * scale_Cor * Coriolis_the
-        + (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_the;
+        + (cent_legacy ? -1.0 : +1.0) * centrifugal * cent_mom * scale_cen * centrifugal_the;
 
     // The six terms of rhs_v recorded against latitude, one level and one meridian, at stage 0.
     // Signs are as they enter the sum above, so the six add to vbud_tot. See cUranusModel.h.
@@ -746,7 +758,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         vbud_trans[j] = -transport_v;
         vbud_diff[j]  = diffusion_v / re_eff + diffusion_v * nue_t;
         vbud_cor[j]   = -Coriolis * scale_Cor * Coriolis_the;
-        vbud_cent[j]  = (cent_legacy ? -1.0 : +1.0) * centrifugal * scale_cen * centrifugal_the;
+        vbud_cent[j]  = (cent_legacy ? -1.0 : +1.0) * centrifugal * cent_mom * scale_cen * centrifugal_the;
         vbud_tot[j]   = rhs_v.x[i][j][k];
     }
 
