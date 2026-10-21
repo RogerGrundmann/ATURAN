@@ -85,6 +85,23 @@
  * delete bucket is zero on all four. <TAG>_SATADJ_CONSERVE=0 / 1 overrides either way. With
  * CONSERVE off and DIAG unset every written field is byte-identical to the routine before them.
  *
+ * ===== <TAG>_SATADJ_EVAP (2026-10-21), DEFAULT 0 =====
+ *
+ * The entry test lets a cell into the iteration only when its vapour exceeds the LIQUID saturation
+ * value q_Rain_0; every other cell is skipped. So cloud and ice were never evaporated or sublimated
+ * here once the air around them warmed or dried (and the precipitation scheme evaporates rain
+ * only). MEASURED on ATJUP (MTA_3000, 7000 s): with the cone flanks warmed by up to 30 K the NH3
+ * ice on them stayed (2.64 -> 2.39 g/m3 at i=24, carried off, not sublimated).
+ * With <TAG>_SATADJ_EVAP=1 a cell that HOLDS cloud or ice also enters when it is below the
+ * mixed-phase target at its entry temperature (the same q_v_hyp weighting the iteration uses);
+ * the iteration then evaporates toward it, taking from the phase that is there (CONSERVE), and
+ * cools by the latent heat. A cell that already holds ice and sits ABOVE its ice target also
+ * deposits now. Cells without condensate keep the liquid threshold for first condensation.
+ * Needs CONSERVE (on by default on all four); without it the iteration's clips would create water.
+ * Caveat: the target uses rho_at(), i.e. the constant reference density unless <TAG>_LOCAL_RHO is
+ * set, which on ATJUP puts it 9x too high at the NH3 cloud deck -- with EVAP alone the far-field
+ * NH3 cloud would read as strongly subsaturated and evaporate.
+ *
  * ===== <TAG>_SATADJ_NEWTON (2026-10-09), DEFAULT Planet::satadj_default_newton() =====
  *
  * The iteration is the fixed point q <- q + w (q_hyp(T(q)) - q) with a constant w = 1/2. Its
@@ -179,6 +196,8 @@ void SaturationAdjustment<Planet>::run(
     static const bool newton = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_NEWTON");
         return e ? atoi(e) != 0 : Planet::satadj_default_newton(); }();
+    static const bool evap = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_EVAP"); return e && atoi(e) != 0; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
     // Budget sums: weight sin(colatitude) * layer thickness [m] on densities [kg/m3] -> kg/m2.
     double w_before = 0.0, w_after = 0.0, w_norm = 0.0;
@@ -283,7 +302,20 @@ void SaturationAdjustment<Planet>::run(
 
                 // Skip: subsaturated, already saturated, or the SVP underflowed to zero in a
                 // very cold cell.
-                if(c.x[i][j][k] <= q_Rain_0 || q_Rain_0 <= 0.0) continue;
+                if(q_Rain_0 <= 0.0) continue;
+                if(c.x[i][j][k] <= q_Rain_0){
+                    // <TAG>_SATADJ_EVAP (see the note at the top): a cell with condensate also
+                    // enters when it is off its mixed-phase target at the entry temperature.
+                    const double q_c0 = cloud.x[i][j][k], q_i0 = ice.x[i][j][k];
+                    if(!evap || !conserve || (q_c0 <= 0.0 && q_i0 <= 0.0)) continue;
+                    const double q_Ice_0 = rho_c * ep * ATPhys::saturation_vapour_pressure(t_u, C_i, L0_i, R,
+                                                                                          del_alf_i, del_bet_i) / p_u;
+                    double q_t0;
+                    if(q_c0 > 0.0 && q_i0 > 0.0) q_t0 = (q_c0 * q_Rain_0 + q_i0 * q_Ice_0) / (q_c0 + q_i0);
+                    else if(q_i0 <= 0.0)         q_t0 = q_Rain_0;
+                    else                         q_t0 = q_Ice_0;
+                    if(std::fabs(c.x[i][j][k] - q_t0) <= q_diff_min * q_t0) continue;
+                }
 
                 // ---- Mixed-phase iteration (Tao et al. 1988) ----
                 double q_v_b   = c.x[i][j][k];
