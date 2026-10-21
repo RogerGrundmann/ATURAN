@@ -287,28 +287,29 @@ public:
         f <<  "    </DataArray>\n" << std::endl;
     }
 
-    // Close the PointData, write the point coordinates, close the file and report it. The
-    // coordinate block was byte-identical in both models. As with close_slice, the report line
-    // is ATJUP's clean form: ATSAT built the name twice and nested one inside the other.
+    // Close the PointData, write the point coordinates, close the file and report it. As with
+    // close_slice, the report line is ATJUP's clean form: ATSAT built the name twice and nested
+    // one inside the other.
+    //
+    // Each point sits at (i dx, j dy, k dz). The inherited loop reset x to 0 on the whole k = 0
+    // plane and every j = 0 row, collapsing them onto a line: the cells there had zero volume and
+    // ParaView's Contour stopped with "Unable to factor linear system / Cannot compute gradient
+    // of grid" (seen 2026-10-21 on an ATJUP panorama). It also started x at dx elsewhere.
     void close_panorama(std::ofstream &f, int n) const {
         f <<  "   </PointData>\n" << std::endl;
         f <<  "   <Points>\n"  << std::endl;
         f <<  "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n"  << std::endl;
-        double x = 0.0, y = 0.0, z = 0.0;
         const double dx = 0.1, dy = 0.1, dz = 0.1;
         for(int k = 0; k < m.km; k++){
+            const double z = k * dz;
             for(int j = 0; j < m.jm; j++){
+                const double y = j * dy;
                 for(int i = 0; i < m.im; i++){
-                    if(k == 0 || j == 0) x = 0.0;
-                    else x = x + dx;
+                    const double x = i * dx;
                     f << x << " " << y << " " << z  << std::endl;
                 }
-                x = 0;
-                y = y + dy;
                 f <<  "\n"  << std::endl;
             }
-            y = 0.0;
-            z = z + dz;
             f <<  "\n"  << std::endl;
         }
         f <<  "    </DataArray>\n"  << std::endl;
