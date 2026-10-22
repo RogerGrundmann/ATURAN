@@ -432,13 +432,14 @@ void cUranusModel::init_vapour_cloud_ice(std::string gas,
                     t_u, C, L0, R, del_alf, del_bet);
                 const double q_Rain = ep * E_Rain / p_u;
 
-                double val = magnus * r_mix * q_Rain;
+                const double fr = init_species_fr(i, j, k);   // <TAG>_INIT_SPECIES_LOCAL_RHO, 1.0 unset
+                double val = magnus * fr * r_mix * q_Rain;
 
-                if(val >= r_max[j])            val = r_max[j];
-                if((gas == "NH3") && (p_u >= p_00_nh3)) val = r_max[j];
-                if((gas == "H2S") && (p_u >= p_00_h2s)) val = r_max[j];
-                if((gas == "H2O") && (p_u >= p_0_h2o))  val = r_max[j];
-                if((gas == "CH4") && (p_u >= p_0_ch4))  val = r_max[j];
+                if(val >= fr * r_max[j])            val = fr * r_max[j];
+                if((gas == "NH3") && (p_u >= p_00_nh3)) val = fr * r_max[j];
+                if((gas == "H2S") && (p_u >= p_00_h2s)) val = fr * r_max[j];
+                if((gas == "H2O") && (p_u >= p_0_h2o))  val = fr * r_max[j];
+                if((gas == "CH4") && (p_u >= p_0_ch4))  val = fr * r_max[j];
 
                 c.x[i][j][k] = val;
             }

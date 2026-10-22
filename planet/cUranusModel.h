@@ -469,6 +469,31 @@ public:
         return (rho > 0.0 && std::isfinite(rho)) ? rho : r_mix;
     }
 
+    // ATURAN_INIT_SPECIES_LOCAL_RHO=1 (2026-10-22, default 0): the species SET-UP uses the local
+    // density p/(R_mix T) where it used the constant r_mix. The profiles are built as
+    // factor * rho * q_sat and capped at fr * r_max, fr = rho / r_mix, so the cap is a fixed mass
+    // fraction; the init damp_wiggles of the species runs on c / rho instead of c; and rho_mix is
+    // filled before the initial saturation adjustment, which otherwise reads 0 there and falls back
+    // to r_mix. Why: ATSAT with ATSAT_LOCAL_RHO=1 went NaN in iteration 2 (2026-10-22, LR16_SAT) at the
+    // lid, CH4 vapour 0.0264 kg/m3 against an air density of 0.0121 -- r_mix-scaled densities that
+    // the damp had carried up the steep density gradient (i=39 0.0037 -> 0.0163 kg/m3).
+    // With the knob unset every value below is exactly the old one (fr = 1.0, rho_init = r_mix).
+    static bool init_species_local_rho(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_INIT_SPECIES_LOCAL_RHO"); return e && atoi(e) != 0; }();
+        return v;
+    }
+    double rho_init(int i, int j, int k){
+        if(!init_species_local_rho()) return r_mix;
+        const double T = t.x[i][j][k] * t_ref;
+        const double rho = (T > 0.0 && R_mix > 0.0) ? p_stat.x[i][j][k] * 1.0e5 / (R_mix * T) : 0.0;
+        return (rho > 0.0 && std::isfinite(rho)) ? rho : r_mix;
+    }
+    double init_species_fr(int i, int j, int k){
+        return init_species_local_rho() ? rho_init(i, j, k) / r_mix : 1.0;
+    }
+    void fill_rho_mix_init();          // cUranusModel.cpp, before the species set-up
+    void damp_species_init(Array& f);  // cUranusModel.cpp, the set-up's damp_wiggles of a species
+
     // Whether the shared adjustment writes the static pressure back after condensing. ATSAT says
     // true; ATURAN's own routine only READS p_stat (two references, both reads), so it says false
     // and the shared algorithm leaves the field alone — one of the two behaviours had to be named

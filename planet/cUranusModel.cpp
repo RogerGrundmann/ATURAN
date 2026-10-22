@@ -383,6 +383,32 @@ void cUranusModel::LoadConfig(const char *filename){
 /*
 *
 */
+// ATURAN_INIT_SPECIES_LOCAL_RHO: see the note at rho_init() in cUranusModel.h.
+void cUranusModel::fill_rho_mix_init(){
+    if(!init_species_local_rho()) return;
+    double rmin = 1.0e30, rmax = 0.0;
+    for(int i = 0; i < im; i++)
+        for(int j = 0; j < jm; j++)
+            for(int k = 0; k < km; k++){
+                const double r = rho_init(i, j, k);
+                rho_mix.x[i][j][k] = r;
+                rmin = std::min(rmin, r); rmax = std::max(rmax, r);
+            }
+    printf("      %s: INIT_SPECIES_LOCAL_RHO: R_mix = %.6g, r_mix = %.6g, set-up density %.6g .. %.6g kg/m3\n",
+           "ATURAN", R_mix, r_mix, rmin, rmax);
+}
+
+void cUranusModel::damp_species_init(Array& f){
+    if(!init_species_local_rho()){ AtomUtils::damp_wiggles(f, nullptr, true, true, true); return; }
+    for(int i = 0; i < im; i++)
+        for(int j = 0; j < jm; j++)
+            for(int k = 0; k < km; k++) f.x[i][j][k] /= rho_init(i, j, k);
+    AtomUtils::damp_wiggles(f, nullptr, true, true, true);
+    for(int i = 0; i < im; i++)
+        for(int j = 0; j < jm; j++)
+            for(int k = 0; k < km; k++) f.x[i][j][k] *= rho_init(i, j, k);
+}
+
 void cUranusModel::Run(){
 
     #ifdef _OPENMP
@@ -473,6 +499,7 @@ void cUranusModel::Run(){
     init_temperature();
     balanceThermalWind();                                               // ATURAN_TW_BALANCE (on with ATURAN_GEO_BALANCE); needs t and the prescribed w
     init_PressureStatic();
+    fill_rho_mix_init();
 
 //    goto Printout;
 
@@ -482,9 +509,9 @@ void cUranusModel::Run(){
         C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4,
         ch4, ch4_cloud, ch4_ice, cloudiness_ch4);
 
-    AtomUtils::damp_wiggles(ch4,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(ch4_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(ch4_ice,   nullptr, true, true, true);
+    damp_species_init(ch4);
+    damp_species_init(ch4_cloud);
+    damp_species_init(ch4_ice);
 
     init_vapour_cloud_ice("H2O", h2o_tropopause, coeff_h2o_A, coeff_h2o_B,
         coeff_h2o_A_i, coeff_h2o_B_i, t_0_h2o, t_00_h2o,
@@ -492,9 +519,9 @@ void cUranusModel::Run(){
         C_h2o, L0_h2o, R_h2o, del_alf_h2o, del_bet_h2o,
         h2o, h2o_cloud, h2o_ice, cloudiness_h2o);
 
-    AtomUtils::damp_wiggles(h2o,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2o_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2o_ice,   nullptr, true, true, true);
+    damp_species_init(h2o);
+    damp_species_init(h2o_cloud);
+    damp_species_init(h2o_ice);
 
     init_vapour_cloud_ice("H2S", h2s_tropopause, coeff_h2s_A, coeff_h2s_B,
         coeff_h2s_A_i, coeff_h2s_B_i, t_0_h2s, t_00_h2s,
@@ -502,9 +529,9 @@ void cUranusModel::Run(){
         C_h2s, L0_h2s, R_h2s, del_alf_h2s, del_bet_h2s,
         h2s, h2s_cloud, h2s_ice, cloudiness_h2s);
 
-    AtomUtils::damp_wiggles(h2s,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2s_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2s_ice,   nullptr, true, true, true);
+    damp_species_init(h2s);
+    damp_species_init(h2s_cloud);
+    damp_species_init(h2s_ice);
 
     init_vapour_cloud_ice("NH3", nh3_tropopause, coeff_nh3_A, coeff_nh3_B,
         coeff_nh3_A_i, coeff_nh3_B_i, t_0_nh3, t_00_nh3,
@@ -512,9 +539,9 @@ void cUranusModel::Run(){
         C_nh3, L0_nh3, R_nh3, del_alf_nh3, del_bet_nh3,
         nh3, nh3_cloud, nh3_ice, cloudiness_nh3);
 
-    AtomUtils::damp_wiggles(nh3,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(nh3_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(nh3_ice,   nullptr, true, true, true);
+    damp_species_init(nh3);
+    damp_species_init(nh3_cloud);
+    damp_species_init(nh3_ice);
 
 //    goto Printout;
 
@@ -525,9 +552,9 @@ void cUranusModel::Run(){
         C_h2o, L0_h2o, R_h2o, del_alf_h2o, del_bet_h2o, m_h2o,
         h2o, h2o_cloud, h2o_ice);
 
-    AtomUtils::damp_wiggles(h2o,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2o_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2o_ice,   nullptr, true, true, true);
+    damp_species_init(h2o);
+    damp_species_init(h2o_cloud);
+    damp_species_init(h2o_ice);
 
     SaturationAdjustmentUran(*this).run("NH3",
         coeff_nh3_A, coeff_nh3_B, coeff_nh3_A_i, coeff_nh3_B_i,
@@ -536,9 +563,9 @@ void cUranusModel::Run(){
         C_nh3, L0_nh3, R_nh3, del_alf_nh3, del_bet_nh3, m_nh3,
         nh3, nh3_cloud, nh3_ice);
 
-    AtomUtils::damp_wiggles(nh3,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(nh3_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(nh3_ice,   nullptr, true, true, true);
+    damp_species_init(nh3);
+    damp_species_init(nh3_cloud);
+    damp_species_init(nh3_ice);
 
     SaturationAdjustmentUran(*this).run("H2S",
         coeff_h2s_A, coeff_h2s_B, coeff_h2s_A_i, coeff_h2s_B_i,
@@ -547,9 +574,9 @@ void cUranusModel::Run(){
         C_h2s, L0_h2s, R_h2s, del_alf_h2s, del_bet_h2s, m_h2s,
         h2s, h2s_cloud, h2s_ice);
 
-    AtomUtils::damp_wiggles(h2s,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2s_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(h2s_ice,   nullptr, true, true, true);
+    damp_species_init(h2s);
+    damp_species_init(h2s_cloud);
+    damp_species_init(h2s_ice);
 
     SaturationAdjustmentUran(*this).run("CH4",
         coeff_ch4_A, coeff_ch4_B, coeff_ch4_A_i, coeff_ch4_B_i,
@@ -558,9 +585,9 @@ void cUranusModel::Run(){
         C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, m_ch4,
         ch4, ch4_cloud, ch4_ice);
 
-    AtomUtils::damp_wiggles(ch4,       nullptr, true, true, true);
-    AtomUtils::damp_wiggles(ch4_cloud, nullptr, true, true, true);
-    AtomUtils::damp_wiggles(ch4_ice,   nullptr, true, true, true);
+    damp_species_init(ch4);
+    damp_species_init(ch4_cloud);
+    damp_species_init(ch4_ice);
 
 
     ChemistryUran(*this).ChemMassRateUran();
