@@ -102,6 +102,18 @@
  * set, which on ATJUP puts it 9x too high at the NH3 cloud deck -- with EVAP alone the far-field
  * NH3 cloud would read as strongly subsaturated and evaporate.
  *
+ * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
+ *
+ * A cell that evaporates all its cloud and ice while its vapour is still below the target has
+ * reached its end state: nothing is left to evaporate, every further pass leaves q and T as they
+ * are, and the q_diff test can never pass. It was counted "not converged". MEASURED on ATJUP
+ * (NC_20, LOCAL_RHO=1 + EVAP=1, SATADJ_DIAG=2): 400.2-400.7k of the 400-401k NH3 cells not
+ * converged per call (99.9 %) were such dry cells; ~500 (mixed phase, oscillating) really failed.
+ * With <TAG>_SATADJ_DRY_EXIT=1 (and CONSERVE) such a cell leaves the pass loop and counts as
+ * converged. It is not a candidate for the reported cell, so that log line keeps its meaning.
+ * Every written field is the same either way; only the not-converged count and the time change
+ * (byte-checked on ATJUP, 20 it: =0 and =1 give 10/10 identical files). =0 restores the old count.
+ *
  * ===== <TAG>_SATADJ_NEWTON (2026-10-09), DEFAULT Planet::satadj_default_newton() =====
  *
  * The iteration is the fixed point q <- q + w (q_hyp(T(q)) - q) with a constant w = 1/2. Its
@@ -190,6 +202,13 @@ void SaturationAdjustment<Planet>::run(
     // <TAG>_SATADJ_DIAG / <TAG>_SATADJ_CONSERVE, see the note at the top. Read once per planet.
     static const bool diag = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DIAG"); return e && atoi(e) != 0; }();
+    // <TAG>_SATADJ_DIAG=2 (print-only, 2026-10-22): also sorts the cells that did not converge --
+    // by entry branch, end phase, end temperature, last q_diff, oscillation and level i.
+    static const bool diag2 = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DIAG"); return e && atoi(e) >= 2; }();
+    constexpr int NI = 64;
+    long nc_br[2] = {0, 0}, ad_br[2] = {0, 0}, nc_ph[4] = {0, 0, 0, 0}, nc_T[3] = {0, 0, 0}, nc_qd[4] = {0, 0, 0, 0};
+    long nc_dry = 0, nc_osc = 0, nc_i[NI] = {0}, n_dry_exit = 0;
     static const bool conserve = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_CONSERVE");
         return e ? atoi(e) != 0 : Planet::satadj_default_conserve(); }();
@@ -198,6 +217,8 @@ void SaturationAdjustment<Planet>::run(
         return e ? atoi(e) != 0 : Planet::satadj_default_newton(); }();
     static const bool evap = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_EVAP"); return e && atoi(e) != 0; }();
+    static const bool dry_exit = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
     // Budget sums: weight sin(colatitude) * layer thickness [m] on densities [kg/m3] -> kg/m2.
     double w_before = 0.0, w_after = 0.0, w_norm = 0.0;
@@ -236,7 +257,8 @@ void SaturationAdjustment<Planet>::run(
     // Main saturation-adjustment loop — fully independent per cell
     // -----------------------------------------------------------------------
     #pragma omp parallel for collapse(2) schedule(static) \
-        reduction(+:b_entry_ice,b_entry_neg,b_loop_clip,b_loop_ice,n_entry_ice,n_loop_clip,n_loop_ice,n_noconv,n_adjusted)
+        reduction(+:b_entry_ice,b_entry_neg,b_loop_clip,b_loop_ice,n_entry_ice,n_loop_clip,n_loop_ice,n_noconv,n_adjusted) \
+        reduction(+:nc_br[:2],ad_br[:2],nc_ph[:4],nc_T[:3],nc_qd[:4],nc_i[:NI],nc_dry,nc_osc,n_dry_exit)
     for(int k = 0; k < m.km; k++){
         for(int j = 0; j < m.jm; j++){
             for(int i = 0; i < m.im; i++){
@@ -303,6 +325,7 @@ void SaturationAdjustment<Planet>::run(
                 // Skip: subsaturated, already saturated, or the SVP underflowed to zero in a
                 // very cold cell.
                 if(q_Rain_0 <= 0.0) continue;
+                const int branch = c.x[i][j][k] <= q_Rain_0 ? 1 : 0;   // DIAG=2: 1 = entered to evaporate
                 if(c.x[i][j][k] <= q_Rain_0){
                     // <TAG>_SATADJ_EVAP (see the note at the top): a cell with condensate also
                     // enters when it is off its mixed-phase target at the entry temperature.
@@ -325,8 +348,11 @@ void SaturationAdjustment<Planet>::run(
                 double q_v_hyp = q_v_b;
 
                 bool cell_found = false;
+                bool cell_dry   = false;                     // <TAG>_SATADJ_DRY_EXIT: left dry and subsaturated
                 int  cell_iter  = 0;
                 double cell_clip = 0.0, cell_ice = 0.0;      // water the clips created / the delete removed
+                double last_qdiff = 0.0, last_dev = 0.0;     // DIAG=2: last q_diff, last q_v_b - target
+                int    n_flip = 0;                           // DIAG=2: sign changes of q_v_b - target
 
                 for(int itr = 1; itr <= iter_prec_end; itr++){
                     double CND = (T - t_00) * t_range_inv;
@@ -393,9 +419,20 @@ void SaturationAdjustment<Planet>::run(
                     }
 
                     const double q_diff = std::fabs(q_v_b - q_v_hyp) / (q_v_hyp + 1e-20);
+                    if(diag2){
+                        const double dev = q_v_b - q_v_hyp;
+                        if(itr > 1 && dev * last_dev < 0.0) n_flip++;
+                        last_dev = dev; last_qdiff = q_diff;
+                    }
                     if(q_diff <= q_diff_min){
                         cell_found = true;
                         cell_iter  = itr;
+                        break;
+                    }
+                    // <TAG>_SATADJ_DRY_EXIT (see the note at the top): no condensate left and the
+                    // vapour still below the target -- further passes change nothing.
+                    if(dry_exit && conserve && q_c_b <= 0.0 && q_i_b <= 0.0 && q_v_b < q_v_hyp){
+                        cell_dry = true;
                         break;
                     }
                     if(newton){
@@ -425,7 +462,20 @@ void SaturationAdjustment<Planet>::run(
                 }
 
                 n_adjusted++;
-                if(!cell_found) n_noconv++;
+                if(!cell_found && !cell_dry) n_noconv++;
+                if(cell_dry) n_dry_exit++;
+                if(diag2){
+                    ad_br[branch]++;
+                    if(!cell_found && !cell_dry){
+                        nc_br[branch]++;
+                        nc_ph[(q_c_b > 0.0 ? 1 : 0) + (q_i_b > 0.0 ? 2 : 0)]++;
+                        nc_T[T <= t_00 ? 0 : (T >= t_0 ? 2 : 1)]++;
+                        nc_qd[last_qdiff < 1e-2 ? 0 : (last_qdiff < 1e-1 ? 1 : (last_qdiff < 1.0 ? 2 : 3))]++;
+                        if(q_c_b <= 0.0 && q_i_b <= 0.0 && last_dev < 0.0) nc_dry++;
+                        if(n_flip >= 3) nc_osc++;
+                        if(i < NI) nc_i[i]++;
+                    }
+                }
                 if(cell_clip != 0.0){ b_loop_clip += wgt * cell_clip; n_loop_clip++; }
                 if(cell_ice  != 0.0){ b_loop_ice  -= wgt * cell_ice;  n_loop_ice++;  }
 
@@ -518,6 +568,19 @@ void SaturationAdjustment<Planet>::run(
         printf("      %s: [SATADJ-DIAG] %s    final clamp                  %+.6e\n", Planet::planet_tag(), gas.c_str(), b_final * f);
         printf("      %s: [SATADJ-DIAG] %s    unattributed                 %+.6e   cells adjusted %ld, not converged in %d passes %ld\n",
                Planet::planet_tag(), gas.c_str(), (w_after - w_before - sum_b) * f, n_adjusted, iter_prec_end, n_noconv);
+    }
+    if(diag2 && n_adjusted > 0){
+        const char* tg = Planet::planet_tag(); const char* g = gas.c_str();
+        printf("      %s: [SATADJ-NC] %s  adjusted by branch: condense %ld  evaporate %ld | not converged: condense %ld  evaporate %ld | dry exits %ld\n",
+               tg, g, ad_br[0], ad_br[1], nc_br[0], nc_br[1], n_dry_exit);
+        printf("      %s: [SATADJ-NC] %s  end phase none %ld  liquid %ld  ice %ld  mixed %ld | dry and still subsaturated %ld | oscillating (>=3 flips) %ld\n",
+               tg, g, nc_ph[0], nc_ph[1], nc_ph[2], nc_ph[3], nc_dry, nc_osc);
+        printf("      %s: [SATADJ-NC] %s  end T <= t_00 %ld  between %ld  >= t_0 %ld | last q_diff <1e-2 %ld  <1e-1 %ld  <1 %ld  >=1 %ld\n",
+               tg, g, nc_T[0], nc_T[1], nc_T[2], nc_qd[0], nc_qd[1], nc_qd[2], nc_qd[3]);
+        printf("      %s: [SATADJ-NC] %s  by level i:", tg, g);
+        const int im_c = m.im;
+        for(int i = 0; i < im_c && i < NI; i++) if(nc_i[i]) printf(" %d:%ld", i, nc_i[i]);
+        printf("\n");
     }
 
     // -----------------------------------------------------------------------
