@@ -85,7 +85,10 @@
  * delete bucket is zero on all four. <TAG>_SATADJ_CONSERVE=0 / 1 overrides either way. With
  * CONSERVE off and DIAG unset every written field is byte-identical to the routine before them.
  *
- * ===== <TAG>_SATADJ_EVAP (2026-10-21), DEFAULT 0 =====
+ * ===== <TAG>_SATADJ_EVAP (2026-10-21), DEFAULT Planet::satadj_default_evap() =====
+ *
+ * Since 2026-10-22 ATJUP returns true (with ATJUP_LOCAL_RHO default 1 the same day); ATSAT,
+ * ATNEPT and ATURAN return false. <TAG>_SATADJ_EVAP=0 / 1 overrides either way.
  *
  * The entry test lets a cell into the iteration only when its vapour exceeds the LIQUID saturation
  * value q_Rain_0; every other cell is skipped. So cloud and ice were never evaporated or sublimated
@@ -216,7 +219,8 @@ void SaturationAdjustment<Planet>::run(
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_NEWTON");
         return e ? atoi(e) != 0 : Planet::satadj_default_newton(); }();
     static const bool evap = [](){
-        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_EVAP"); return e && atoi(e) != 0; }();
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_EVAP");
+        return e ? atoi(e) != 0 : Planet::satadj_default_evap(); }();
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
