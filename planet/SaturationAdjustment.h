@@ -105,6 +105,19 @@
  * set, which on ATJUP puts it 9x too high at the NH3 cloud deck -- with EVAP alone the far-field
  * NH3 cloud would read as strongly subsaturated and evaporate.
  *
+ * ===== <TAG>_SATADJ_ICE_ENTRY (2026-10-22), DEFAULT 0 =====
+ *
+ * A cell WITHOUT condensate entered only when its vapour exceeded the LIQUID saturation value, and
+ * the iteration then aimed it at that value, whatever its temperature. Below t_0 the ice value is
+ * lower, so air supersaturated over ice but not over liquid never formed its first ice. MEASURED on
+ * ATJUP (NC_20, LOCAL_RHO + EVAP): no NH3 cell entered supersaturated; every adjusted one came in
+ * through the EVAP branch because it already held condensate.
+ * With <TAG>_SATADJ_ICE_ENTRY=1 a cell without condensate is tested, and iterated, against
+ *     q_t = CND q_Rain + DEP q_Ice,   CND = (T - t_00)/(t_0 - t_00) clipped to [0, 1], DEP = 1 - CND,
+ * i.e. ice below t_00, liquid above t_0, linear between -- the split the iteration deposits with,
+ * so the first condensate lands on the target the cell entered against. Cells holding condensate
+ * are unchanged.
+ *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *
  * A cell that evaporates all its cloud and ice while its vapour is still below the target has
@@ -221,6 +234,10 @@ void SaturationAdjustment<Planet>::run(
     static const bool evap = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_EVAP");
         return e ? atoi(e) != 0 : Planet::satadj_default_evap(); }();
+    static const bool ice_entry = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_ICE_ENTRY"); return e && atoi(e) != 0; }();
+    // <TAG>_SATADJ_ICE_ENTRY: liquid fraction of the temperature split, for a cell without condensate.
+    auto cnd_of = [&](double TT){ return TT <= t_00 ? 0.0 : (TT >= t_0 ? 1.0 : (TT - t_00) * t_range_inv); };
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
@@ -329,8 +346,17 @@ void SaturationAdjustment<Planet>::run(
                 // Skip: subsaturated, already saturated, or the SVP underflowed to zero in a
                 // very cold cell.
                 if(q_Rain_0 <= 0.0) continue;
-                const int branch = c.x[i][j][k] <= q_Rain_0 ? 1 : 0;   // DIAG=2: 1 = entered to evaporate
-                if(c.x[i][j][k] <= q_Rain_0){
+                // <TAG>_SATADJ_ICE_ENTRY (see the note at the top): a cell without condensate is
+                // tested against the temperature-split target instead of the liquid value.
+                double q_entry = q_Rain_0;
+                if(ice_entry && cloud.x[i][j][k] <= 0.0 && ice.x[i][j][k] <= 0.0){
+                    const double cnd0 = cnd_of(t_u);
+                    if(cnd0 < 1.0)
+                        q_entry = cnd0 * q_Rain_0 + (1.0 - cnd0) * rho_c * ep
+                                * ATPhys::saturation_vapour_pressure(t_u, C_i, L0_i, R, del_alf_i, del_bet_i) / p_u;
+                }
+                const int branch = c.x[i][j][k] <= q_entry ? 1 : 0;    // DIAG=2: 1 = entered to evaporate
+                if(c.x[i][j][k] <= q_entry){
                     // <TAG>_SATADJ_EVAP (see the note at the top): a cell with condensate also
                     // enters when it is off its mixed-phase target at the entry temperature.
                     const double q_c0 = cloud.x[i][j][k], q_i0 = ice.x[i][j][k];
@@ -400,6 +426,8 @@ void SaturationAdjustment<Planet>::run(
 
                     if(q_c_b > 0.0 && q_i_b > 0.0)
                         q_v_hyp = (q_c_b * q_Rain + q_i_b * q_Ice) / (q_c_b + q_i_b);
+                    else if(ice_entry && q_c_b <= 0.0 && q_i_b <= 0.0){
+                        const double cn = cnd_of(T); q_v_hyp = cn * q_Rain + (1.0 - cn) * q_Ice; }
                     else if(q_i_b == 0.0) q_v_hyp = q_Rain;
                     else                  q_v_hyp = q_Ice;
 
@@ -450,6 +478,8 @@ void SaturationAdjustment<Planet>::run(
                         double q_hyp_d;
                         if(q_c_b > 0.0 && q_i_b > 0.0)
                             q_hyp_d = (q_c_b * q_Rain_d + q_i_b * q_Ice_d) / (q_c_b + q_i_b);
+                        else if(ice_entry && q_c_b <= 0.0 && q_i_b <= 0.0){
+                            const double cn = cnd_of(T); q_hyp_d = cn * q_Rain_d + (1.0 - cn) * q_Ice_d; }
                         else if(q_i_b == 0.0) q_hyp_d = q_Rain_d;
                         else                  q_hyp_d = q_Ice_d;
                         double CNDn = (T - t_00) * t_range_inv;
