@@ -261,6 +261,33 @@ void PressureSolver<Planet>::run(){
         }
     }
 
+    // <TAG>_PRESS_LINE=1 (2026-10-23, default 0 = the pointwise sweep alone, byte-identical): after the
+    // pointwise pass, every (j, k) column is relaxed EXACTLY in r -- ATOM_Precipitation's
+    // ATM_PRESS_LINE_SOLVE (PressureSolverAtm.h, relax_radial_lines), same operator, same source, same
+    // fixed point, only the rate changes. WHY: the operator is radially dominated far beyond ATOM's ratio
+    // of 26 -- on ATJUP num1 = 1/dr^2 = 1600 against num2 ~ 0.013 (metric radius 500, dtheta 1 deg),
+    // ~1e5 -- so a pointwise sweep couples a cell almost only to its column and the HORIZONTAL structure
+    // of p_dyn barely moves: the ATJUP_VORTEX anticyclone's pressure centroid stayed at j 112.0000
+    // k 180.0000 for 1000 it while the far-field wind at its centre latitude was -48 m/s.
+    // ONE DIFFERENCE FROM ATOM, ON PURPOSE: the radial ends are FOLDED (the 2-point Neumann
+    // p0 = c43 p1 - c13 p2 substituted into the first / last row), not lagged. A lagged end ties the
+    // column to its old end value through num1, so a column-uniform change -- exactly what a moving
+    // barotropic pressure needs -- is held back by the 1e5 ratio again; folded, a column-uniform mode sees
+    // only the horizontal coupling. ATOM lagged because folding opened a spectral-radius-1 mode: that is
+    // the all-Neumann constant, so here the domain mean of p_dyn is HELD after every sweep (a constant
+    // shift, invisible to every gradient). Obstacle faces stay dp/dn = 0 exactly as in the pointwise
+    // wall branch; a run of fluid cells between solid cells is its own tridiagonal system.
+    const bool press_line = ATPhys::env_int(TAG, "PRESS_LINE", 0) != 0;
+    std::vector<double> line_rhs;                   // the source of every cell, cached by the pointwise pass
+    if(press_line) line_rhs.assign((size_t)m.im * m.jm * m.km, 0.0);
+    auto interior_mean = [&]()->double{
+        double s = 0.0; long n = 0;
+        #pragma omp parallel for collapse(2) reduction(+:s, n) schedule(static)
+        for(int i = 1; i < m.im-1; i++) for(int j = 1; j < m.jm-1; j++)
+            for(int k = k_first; k < m.km-1; k++){ s += m.p_dyn.x[i][j][k]; n++; }
+        return n ? s / n : 0.0; };
+    const double p_mean0 = press_line ? interior_mean() : 0.0;
+
     for(int sweep = 0; sweep < n_sweeps; sweep++){
 
       for(int colour = 0; colour < 2; colour++){
@@ -432,12 +459,88 @@ void PressureSolver<Planet>::run(){
                     else if (div_src >  src_max)      div_src =  src_max;
                     else if (div_src < -src_max)      div_src = -src_max;
                     if(press_incr) div_src += lc_old[((size_t)i * m.jm + j) * m.km + k];
+                    if(press_line) line_rhs[((size_t)i * m.jm + j) * m.km + k] = div_src;
 
                     m.p_dyn.x[i][j][k] = (acc - div_src) / den;
                 } // k
             } // j
         } // i
       } // colour
+
+      // ---- <TAG>_PRESS_LINE: the radial line pass (see above) ----
+      // Row i of a column, the theta / phi neighbours lagged:
+      //     -num1 p[i-1] + den p[i] - num1 p[i+1] = acc_h - src
+      // diagonally dominant (|a| + |c| <= 2 num1 <= den), so Thomas needs no pivoting; a folded end row
+      // keeps |c| = 2/3 num1 against den - 4/3 num1 = 2/3 num1 + the horizontal weights.
+      if(press_line){
+        for(int colour = 0; colour < 2; colour++){
+          #pragma omp parallel
+          {
+            std::vector<double> aa(m.im), bb(m.im), cc(m.im), dd(m.im), cp(m.im), dp(m.im);
+            std::vector<char> fl(m.im);
+            #pragma omp for collapse(2) schedule(static)
+            for(int j = 1; j < m.jm-1; j++){
+              for(int k = k_first; k < m.km-1; k++){
+                if(((j + k) & 1) != colour) continue;
+                const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km);
+                const int ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+                for(int i = 1; i < m.im-1; i++){
+                    fl[i] = 0;
+                    if(m.is_solid(i,j,k)) continue;
+                    const double rm   = m.metricRadius(m.rad.z[i]);
+                    const double erm  = m.coord_stretching ? 1.0 / (rm + 1.0) : 1.0;
+                    const double num1 = erm * erm * inv_dr2;
+                    const double num2 = inv_dthe2 / (rm * rm);
+                    const double num3 = inv_dphi2 / (rm * rm * sinthe_table[j] * sinthe_table[j]);
+                    double acc_h = 0.0, den = 0.0, a = -num1, c = -num1;
+                    if(press_wall){
+                        if(!m.is_solid(i,j+1,k)){ acc_h += num2 * m.p_dyn.x[i][j+1][k]; den += num2; }
+                        if(!m.is_solid(i,j-1,k)){ acc_h += num2 * m.p_dyn.x[i][j-1][k]; den += num2; }
+                        if(!m.is_solid(i,j,ke)) { acc_h += num3 * m.p_dyn.x[i][j][ke];  den += num3; }
+                        if(!m.is_solid(i,j,kw)) { acc_h += num3 * m.p_dyn.x[i][j][kw];  den += num3; }
+                        if(m.is_solid(i+1,j,k)) c = 0.0; else den += num1;
+                        if(m.is_solid(i-1,j,k)) a = 0.0; else den += num1;
+                    } else {
+                        acc_h = num2 * (m.p_dyn.x[i][j+1][k] + m.p_dyn.x[i][j-1][k])
+                              + num3 * (m.p_dyn.x[i][j][ke]  + m.p_dyn.x[i][j][kw]);
+                        den = 2.0 * (num1 + num2 + num3);
+                    }
+                    if(den <= 0.0) continue;                    // walled in on all six faces, as above
+                    fl[i] = 1;
+                    aa[i] = a; bb[i] = den; cc[i] = c;
+                    dd[i] = acc_h - line_rhs[((size_t)i * m.jm + j) * m.km + k];
+                }
+                int i = 1;
+                while(i < m.im-1){
+                    if(!fl[i]){ i++; continue; }
+                    int lo = i, hi = i;
+                    while(hi + 1 < m.im-1 && fl[hi+1]) hi++;
+                    // the cell below the run: the domain wall (fold the Neumann), a solid cell (its face
+                    // already dropped with PRESS_WALL; otherwise its value is lagged), and the same above
+                    if(lo == 1 && hi > lo){ bb[lo] += aa[lo] * m.c43; cc[lo] -= aa[lo] * m.c13; }
+                    else dd[lo] -= aa[lo] * m.p_dyn.x[lo-1][j][k];
+                    if(hi == m.im-2 && hi > lo){ bb[hi] += cc[hi] * m.c43; aa[hi] -= cc[hi] * m.c13; }
+                    else dd[hi] -= cc[hi] * m.p_dyn.x[hi+1][j][k];
+                    cp[lo] = cc[lo] / bb[lo];
+                    dp[lo] = dd[lo] / bb[lo];
+                    for(int n = lo + 1; n <= hi; n++){
+                        const double dn = bb[n] - aa[n] * cp[n-1];
+                        cp[n] = cc[n] / dn;
+                        dp[n] = (dd[n] - aa[n] * dp[n-1]) / dn;
+                    }
+                    double x = dp[hi];
+                    if(std::isfinite(x)) m.p_dyn.x[hi][j][k] = x;
+                    for(int n = hi - 1; n >= lo; n--){
+                        x = dp[n] - cp[n] * x;
+                        if(std::isfinite(x)) m.p_dyn.x[n][j][k] = x;
+                    }
+                    i = hi + 1;
+                }
+              }
+            }
+          } // omp parallel
+        } // colour
+      }
 
         // ---- Outer boundary condition of the relaxation ----
         // 2-point Neumann, not the 3-point cubic: the cubic amplifies an alternating error 7x per
@@ -475,6 +578,15 @@ void PressureSolver<Planet>::run(){
                 m.p_dyn.x[i][j][0] = m.p_dyn.x[i][j][m.km-1]
                     = (m.p_dyn.x[i][j][0] + m.p_dyn.x[i][j][m.km-1]) / 2.0;
             }
+        }
+
+        // <TAG>_PRESS_LINE: hold the all-Neumann constant (see above). Every boundary relation is
+        // affine with weights summing to 1 (c43 - c13 = 1, the copies), so one shift of every cell keeps them.
+        if(press_line){
+            const double shift = interior_mean() - p_mean0;
+            #pragma omp parallel for collapse(2) schedule(static)
+            for(int i = 0; i < m.im; i++) for(int j = 0; j < m.jm; j++)
+                for(int k = 0; k < m.km; k++) m.p_dyn.x[i][j][k] -= shift;
         }
 
     } // sweep
