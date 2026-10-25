@@ -118,7 +118,7 @@
  * so the first condensate lands on the target the cell entered against. Cells holding condensate
  * are unchanged.
  *
- * ===== <TAG>_SATADJ_BERGERON (2026-10-25), DEFAULT 0 =====
+ * ===== <TAG>_SATADJ_BERGERON (2026-10-25), DEFAULT Planet::satadj_default_bergeron() =====
  *
  * A cell that holds ice and no liquid, colder than t_0, with its vapour above the ice value but not
  * above the liquid one, deposited with the temperature split: CND = (T - t_00)/(t_0 - t_00) of the
@@ -146,6 +146,9 @@
  * cloud turned to ice (ice +44 %, mean T +0.1..0.4 K at i 22-27) and empty cells at the deck's lower
  * edge (i 23, vapour 1.6x the ice value) stayed empty under the liquid entry test.
  * ATOM_Precipitation has the same split and no such case (checked 2026-10-25).
+ * Default per planet through Planet::satadj_default_bergeron() (2026-10-25, user): 2 on ATJUP
+ * (CH_4000 restart 4000 -> 5000: holes 3 -> 0, non-converged 0, NH3 liquid -> 0, ice x1.55, up to
+ * +1.1 K under the vortex), 0 on ATSAT / ATNEPT / ATURAN (not measured there). =0 restores.
  *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *
@@ -268,7 +271,7 @@ void SaturationAdjustment<Planet>::run(
     // <TAG>_SATADJ_ICE_ENTRY: liquid fraction of the temperature split, for a cell without condensate.
     auto cnd_of = [&](double TT){ return TT <= t_00 ? 0.0 : (TT >= t_0 ? 1.0 : (TT - t_00) * t_range_inv); };
     static const int bergeron = [](){
-        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_BERGERON"); return e ? atoi(e) : 0; }();
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_BERGERON"); return e ? atoi(e) : Planet::satadj_default_bergeron(); }();
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
