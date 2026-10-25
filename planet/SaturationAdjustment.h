@@ -118,6 +118,35 @@
  * so the first condensate lands on the target the cell entered against. Cells holding condensate
  * are unchanged.
  *
+ * ===== <TAG>_SATADJ_BERGERON (2026-10-25), DEFAULT 0 =====
+ *
+ * A cell that holds ice and no liquid, colder than t_0, with its vapour above the ice value but not
+ * above the liquid one, deposited with the temperature split: CND = (T - t_00)/(t_0 - t_00) of the
+ * deposit went to LIQUID (0.58 for NH3 at 172 K). With liquid present the target becomes the
+ * mass-weighted mix and moves toward liquid saturation (~1.6x the ice value there), the new liquid
+ * evaporates again, and the pass oscillates without converging; the last iterate is written back.
+ * MEASURED on ATJUP (satchk/dots_2026-10-25, CH_4000 / VB18_3000 panoramas): single NH3 cells at
+ * i 23-24 with ice ~4e-4 against 0.3-0.7 g/m3 in their neighbours at the same T (within 0.6 K),
+ * the missing ice held as vapour (2.91 vs 2.20 g/m3) -- the dark dots of the cloudview. These are
+ * the "real non-converged, mixed phase, oscillating" NH3 cells of SATADJ_DIAG=2 (i 20-25).
+ * With <TAG>_SATADJ_BERGERON=1 a pass in a cell that holds ice, colder than t_0, with its vapour not
+ * above liquid saturation, is the Wegener-Bergeron-Findeisen process: the liquid evaporates (all of it,
+ * at the start of the pass, cooled by lv -- the adjustment is an equilibrium, so its time scale is not
+ * resolved) and the vapour deposits on, or sublimates from, the ice alone, CND = 0, DEP = 1, in the
+ * update and in the Newton step length alike; the target is then the ice value. The amount of liquid
+ * does not matter: PROBED on a hole cell (CH_4000 restart, 13 S k 161 i 24, bin jup_probe), a liquid
+ * trace of 2e-14 kg/m3 beside 4e-7 kg/m3 of ice sent the first version of this knob (ice-only cells
+ * alone) into the split, the mass-weighted target jumped to 3.8e-3 against an ice value of 2.2e-3,
+ * everything evaporated and the cell left as a DRY exit at 1.33x ice saturation, every call. Above
+ * liquid saturation, without ice, or at T >= t_0 the temperature split is unchanged.
+ * <TAG>_SATADJ_BERGERON=2: as 1, and a cell WITHOUT condensate colder than t_0 enters against the ICE
+ * value and iterates to it, its first condensate being ice (nucleation at ice saturation, no barrier;
+ * supersedes ICE_ENTRY there). MEASURED with =1 (BG2, CH_4000 restart 4000 -> 4020): the i 24 holes
+ * filled and 0 NH3 cells were left not converged (6100-6700 per call without it), but all NH3 liquid
+ * cloud turned to ice (ice +44 %, mean T +0.1..0.4 K at i 22-27) and empty cells at the deck's lower
+ * edge (i 23, vapour 1.6x the ice value) stayed empty under the liquid entry test.
+ * ATOM_Precipitation has the same split and no such case (checked 2026-10-25).
+ *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *
  * A cell that evaporates all its cloud and ice while its vapour is still below the target has
@@ -238,6 +267,8 @@ void SaturationAdjustment<Planet>::run(
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_ICE_ENTRY"); return e && atoi(e) != 0; }();
     // <TAG>_SATADJ_ICE_ENTRY: liquid fraction of the temperature split, for a cell without condensate.
     auto cnd_of = [&](double TT){ return TT <= t_00 ? 0.0 : (TT >= t_0 ? 1.0 : (TT - t_00) * t_range_inv); };
+    static const int bergeron = [](){
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_BERGERON"); return e ? atoi(e) : 0; }();
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
@@ -355,6 +386,9 @@ void SaturationAdjustment<Planet>::run(
                         q_entry = cnd0 * q_Rain_0 + (1.0 - cnd0) * rho_c * ep
                                 * ATPhys::saturation_vapour_pressure(t_u, C_i, L0_i, R, del_alf_i, del_bet_i) / p_u;
                 }
+                // <TAG>_SATADJ_BERGERON=2: a cell without condensate below t_0 enters against the ice value
+                if(bergeron >= 2 && cloud.x[i][j][k] <= 0.0 && ice.x[i][j][k] <= 0.0 && t_u < t_0)
+                    q_entry = rho_c * ep * ATPhys::saturation_vapour_pressure(t_u, C_i, L0_i, R, del_alf_i, del_bet_i) / p_u;
                 const int branch = c.x[i][j][k] <= q_entry ? 1 : 0;    // DIAG=2: 1 = entered to evaporate
                 if(c.x[i][j][k] <= q_entry){
                     // <TAG>_SATADJ_EVAP (see the note at the top): a cell with condensate also
@@ -383,12 +417,25 @@ void SaturationAdjustment<Planet>::run(
                 double cell_clip = 0.0, cell_ice = 0.0;      // water the clips created / the delete removed
                 double last_qdiff = 0.0, last_dev = 0.0;     // DIAG=2: last q_diff, last q_v_b - target
                 int    n_flip = 0;                           // DIAG=2: sign changes of q_v_b - target
+                double q_rain_now = q_Rain_0;                // <TAG>_SATADJ_BERGERON: liquid value at the pass's T
 
                 for(int itr = 1; itr <= iter_prec_end; itr++){
                     double CND = (T - t_00) * t_range_inv;
                     double DEP = (t_0 - T)  * t_range_inv;
                     if(T <= t_00){ CND = 0.0; DEP = 1.0; }
                     if(T >= t_0) { CND = 1.0; DEP = 0.0; }
+                    // <TAG>_SATADJ_BERGERON (see the note at the top): ice present, vapour not above liquid
+                    // saturation -- the liquid evaporates, the vapour goes to and from the ice alone
+                    const bool berg = bergeron != 0 && T < t_0 && q_v_b <= q_rain_now
+                                   && (q_i_b > 0.0 || (bergeron >= 2 && q_c_b <= 0.0));
+                    if(berg){
+                        CND = 0.0; DEP = 1.0;
+                        if(q_c_b > 0.0){
+                            T     -= lv * q_c_b / (m.cp_mix * rho_c);
+                            q_v_b += q_c_b;
+                            q_c_b  = 0.0;
+                        }
+                    }
 
                     double d_q_v = q_v_hyp - q_v_b;
                     double d_q_c = -d_q_v * CND;
@@ -423,9 +470,11 @@ void SaturationAdjustment<Planet>::run(
                                                                              del_alf_i, del_bet_i);
                     const double q_Rain = rho_c * ep * E_Rain / p_u;
                     const double q_Ice  = rho_c * ep * E_Ice  / p_u;
+                    q_rain_now = q_Rain;
 
                     if(q_c_b > 0.0 && q_i_b > 0.0)
                         q_v_hyp = (q_c_b * q_Rain + q_i_b * q_Ice) / (q_c_b + q_i_b);
+                    else if(bergeron >= 2 && q_c_b <= 0.0 && q_i_b <= 0.0 && T < t_0) q_v_hyp = q_Ice;
                     else if(ice_entry && q_c_b <= 0.0 && q_i_b <= 0.0){
                         const double cn = cnd_of(T); q_v_hyp = cn * q_Rain + (1.0 - cn) * q_Ice; }
                     else if(q_i_b == 0.0) q_v_hyp = q_Rain;
@@ -478,6 +527,7 @@ void SaturationAdjustment<Planet>::run(
                         double q_hyp_d;
                         if(q_c_b > 0.0 && q_i_b > 0.0)
                             q_hyp_d = (q_c_b * q_Rain_d + q_i_b * q_Ice_d) / (q_c_b + q_i_b);
+                        else if(bergeron >= 2 && q_c_b <= 0.0 && q_i_b <= 0.0 && T < t_0) q_hyp_d = q_Ice_d;
                         else if(ice_entry && q_c_b <= 0.0 && q_i_b <= 0.0){
                             const double cn = cnd_of(T); q_hyp_d = cn * q_Rain_d + (1.0 - cn) * q_Ice_d; }
                         else if(q_i_b == 0.0) q_hyp_d = q_Rain_d;
@@ -485,6 +535,7 @@ void SaturationAdjustment<Planet>::run(
                         double CNDn = (T - t_00) * t_range_inv;
                         if(T <= t_00) CNDn = 0.0;
                         if(T >= t_0)  CNDn = 1.0;
+                        if(berg)      CNDn = 0.0;
                         const double G = (lv * CNDn + ls * (1.0 - CNDn)) / (m.cp_mix * rho_c)
                                        * (q_hyp_d - q_v_hyp) / dT;
                         double w = 1.0 / (1.0 + std::max(G, 0.0));
