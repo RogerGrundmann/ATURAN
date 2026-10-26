@@ -119,6 +119,26 @@ static int turb_env_enabled(){
     return v;
 }
 
+// ATURAN_MCA=<N> (2026-10-26, DEFAULT 0 = off): the moist convective adjustment with the Ledoux criterion
+// (MoistConvectiveAdjustmentUran, shared ConvectiveAdjustment.h, where its note and knobs are) every N
+// iterations, right after the dry one. Ported from ATJUP. It mass-weights with rho_at() and reads mass
+// fractions as c / rho_at(), so it means what it says only with ATURAN_LOCAL_RHO=1 (with the constant r_mix
+// every layer weighs the same). No tracer carries a formation enthalpy here (the NH4SH chemistry
+// releases none).
+static int mca_stride(){
+    static const int v = [](){ const char* e = getenv("ATURAN_MCA"); return e ? std::max(0, atoi(e)) : 0; }();
+    return v;
+}
+
+// ATURAN_SVP_FIT: assign the shared sets (ATPhys.h). The H2O liquid, CH4 and H2S sets are not touched.
+void cUranusModel::setSvpFit(){
+    const ATPhys::SvpSet hi = ATPhys::svp_fit_h2o_ice(), ni = ATPhys::svp_fit_nh3_ice(), nl = ATPhys::svp_fit_nh3_liq();
+    C_h2o_ice = hi.C; L0_h2o_ice = hi.L0; del_alf_h2o_ice = hi.del_alf; del_bet_h2o_ice = hi.del_bet;
+    C_nh3_ice = ni.C; L0_nh3_ice = ni.L0; del_alf_nh3_ice = ni.del_alf; del_bet_nh3_ice = ni.del_bet;
+    C_nh3     = nl.C; L0_nh3     = nl.L0; del_alf_nh3     = nl.del_alf; del_bet_nh3     = nl.del_bet;
+    printf("      ATURAN: ATURAN_SVP_FIT: NH3 liquid / NH3 ice / H2O ice vapour pressures from the shared fits (ATPhys.h)\n");
+}
+
 static int conv_adj_enabled(){
     static const int v = [](){ const char* e = getenv("ATURAN_CONV_ADJ"); return e ? atoi(e) : 0; }();
     return v;
@@ -469,6 +489,7 @@ void cUranusModel::Run(){
 
 //    goto Printout;
 
+    if(svp_fit()) setSvpFit();                       // ATURAN_SVP_FIT, before any SVP is evaluated
     ChemistryUran(*this).ThermalPropertiesUran();
     gam = g * 1.0e3 / cp_mix;                                           // dry adiabatic lapse rate [K/km]: g[m/s²]*1000 / cp[J/(kg·K)]
 
@@ -1218,6 +1239,22 @@ void cUranusModel::Run(){
         if(radiation_enabled()) RadiationUran(*this).run();
         if(turb_active) TurbulenceUran(*this).run();
         if(conv_adj_enabled()) ConvectiveAdjustmentUran(*this).run();
+        if(mca_stride() > 0 && iter_n % mca_stride() == 0){
+            typedef MoistConvectiveAdjustmentUran::Gas    Gas_;
+            typedef MoistConvectiveAdjustmentUran::Tracer Tr_;
+            // H2S has no ice coefficient set here; its liquid set stands for both phases, as in the model's own adjustment.
+            std::vector<Gas_> gases = {
+                { "H2O", &h2o, &h2o_cloud, &h2o_ice, ep_h2o, lv_h2o, ls_h2o, t_0_h2o,
+                  C_h2o, L0_h2o, R_h2o, del_alf_h2o, del_bet_h2o, C_h2o_ice, L0_h2o_ice, del_alf_h2o_ice, del_bet_h2o_ice },
+                { "NH3", &nh3, &nh3_cloud, &nh3_ice, ep_nh3, lv_nh3, ls_nh3, t_0_nh3,
+                  C_nh3, L0_nh3, R_nh3, del_alf_nh3, del_bet_nh3, C_nh3_ice, L0_nh3_ice, del_alf_nh3_ice, del_bet_nh3_ice },
+                { "H2S", &h2s, &h2s_cloud, &h2s_ice, ep_h2s, lv_h2s, ls_h2s, t_0_h2s,
+                  C_h2s, L0_h2s, R_h2s, del_alf_h2s, del_bet_h2s, C_h2s, L0_h2s, del_alf_h2s, del_bet_h2s },
+                { "CH4", &ch4, &ch4_cloud, &ch4_ice, ep_ch4, lv_ch4, ls_ch4, t_0_ch4,
+                  C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, C_ch4_ice, L0_ch4_ice, del_alf_ch4_ice, del_bet_ch4_ice } };
+            std::vector<Tr_> tracers = { { "NH4SH", &nh4sh, 0.0, true, 0.0 } };
+            MoistConvectiveAdjustmentUran(*this, gases, tracers).run();
+        }
         tb_mark(TB_AFTER); cwb_mark(TB_AFTER); bh_mark(BH_AFTER);
         if(bh_every > 0 && iter_n % bh_every == 0) bh_print();
         if(tb_on && iter_n % tb_every == 0){

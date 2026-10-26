@@ -14,3 +14,4 @@
 class cUranusModel;
 
 typedef ConvectiveAdjustment<cUranusModel> ConvectiveAdjustmentUran;
+typedef MoistConvectiveAdjustment<cUranusModel> MoistConvectiveAdjustmentUran;

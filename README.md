@@ -161,6 +161,8 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
 | `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
+| `ATURAN_MCA` | 0 | moist convective adjustment with the Ledoux criterion every N iterations (H2O, NH3, H2S, CH4; shared `ConvectiveAdjustment.h`, knobs `_MCA_LEDOUX` `_LOADING` `_RELAX` `_PASSES` `_DEBUG`); meaningful with `ATURAN_LOCAL_RHO=1` |
+| `ATURAN_SVP_FIT` | 0 | fitted NH3 liquid / NH3 ice / H2O ice vapour pressures (shared `ATPhys.h`; NIST Antoine, Fray & Schmitt 2009, Murphy & Koop 2005); the ice sets act where the shared adjustment is selected (`ATURAN_SATADJ=1`) |
 | `ATURAN_SATADJ` | 1 | shared saturation adjustment, the default since 2026-10-10 (0 = the inherited routine) |
 
 **Numerics and experiment knobs**

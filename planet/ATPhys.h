@@ -52,6 +52,21 @@ inline double saturation_vapour_pressure(double T_K, double C, double L0, double
 }
 
 
+// FITTED VAPOUR-PRESSURE SETS (2026-10-26), in saturation_vapour_pressure's own form, so a model swaps
+// a set by assigning four members and every consumer follows. Properties of the substance, not of a
+// planet: one copy here for all four models (<TAG>_SVP_FIT, default 0 in each). Sources and checks are
+// written out at ATJUP's setSvpFit (InitValues_Jup.cpp); R is the model's own specific gas constant of the
+// gas (R_h2o 461.52, R_nh3 488.21 J/(kg K)), against which the fits were made.
+//   H2O ice     Murphy & Koop (2005), exact (the formula has this form)
+//   NH3 ice     least-squares fit to Fray & Schmitt (2009), 110-195.4 K, 0.05 %
+//   NH3 liquid  least-squares fit to the NIST Antoine equations, 195.4-330 K, 3.2 % (5 % at 350 K);
+//               below 195.4 K it behaves like the shipped liquid set (within a factor 2 to 100 K)
+struct SvpSet { double C, L0, del_alf, del_bet; };
+inline SvpSet svp_fit_h2o_ice(){ return { -1.962499,  2641.4013,   1.629479,  -3.361398e-3 }; }
+inline SvpSet svp_fit_nh3_ice(){ return { 16.086062,  1857.9898,   0.098768,  -1.179989e-3 }; }
+inline SvpSet svp_fit_nh3_liq(){ return { 196.077451, 3586.5634, -15.978352,   2.837146e-2 }; }
+
+
 // Two-coefficient Clausius-Clapeyron, E = exp(A/T + B). The short form used where a full
 // Sanchez-Lavega coefficient set is not tabulated; Thermo_Jup.cpp is its only caller.
 //

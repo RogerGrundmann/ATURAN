@@ -49,6 +49,7 @@ class cUranusModel{
     // model to take these; see ParaViewWriter.h for what it provides and what it does not.
     template<class M> friend class ParaViewWriter;
     template<class M> friend class ConvectiveAdjustment;
+    template<class M> friend class MoistConvectiveAdjustment;
     template<class M> friend class FluxLimiter;
     template<class M> friend class SaturationAdjustment;
     template<class M> friend class PressureSolver;
@@ -79,6 +80,13 @@ public:
     // also the prefix the shared modules build their environment-variable names from. ATSAT,
     // ATJUP and ATNEPT carry the same accessor.
     static const char* planet_tag(){ return "ATURAN"; }
+    // ATURAN_SVP_FIT=1 (2026-10-26, default 0 = off): the shared fitted NH3 liquid / NH3 ice / H2O ice vapour
+    // pressures (ATPhys.h, sources at ATJUP's setSvpFit), set before the thermal properties.
+    static bool svp_fit(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_SVP_FIT"); return e && atoi(e) != 0; }();
+        return v;
+    }
+    void setSvpFit();
 
     /*
      * ---- Integrator temperature bounds, as PHYSICAL constants ----
