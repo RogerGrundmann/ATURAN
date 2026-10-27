@@ -15,6 +15,7 @@
  *     Planet::rad_albedo_bond()  Bond albedo, so S*(1-A) is ABSORBED
  *     Planet::rad_x_H2()         H2 mole fraction
  *     Planet::rad_x_He()         He mole fraction
+ *     Planet::rad_default_cia_strength()  default of <TAG>_CIA_STRENGTH (2026-10-27: 3.9 on ATJUP, 1 elsewhere)
  *
  * WHICH NUMBERS LIVE WHERE, AND WHY THE LINE IS DRAWN THERE. The five above are MEASURED
  * PROPERTIES OF A PLANET: they have different values on Jupiter and Saturn because the planets
@@ -266,7 +267,7 @@ void Radiation<Planet>::run(){
 
     // Composition-weighted collision-pair factor and the runtime CIA strength multiplier.
     const double comp = x_H2 * x_H2 + he_ratio * x_H2 * x_He;
-    const double cia_mult  = ATPhys::env_double(TAG, "CIA_STRENGTH",     1.0);
+    const double cia_mult  = ATPhys::env_double(TAG, "CIA_STRENGTH",     Planet::rad_default_cia_strength());
     const double opac_mult = ATPhys::env_double(TAG, "OPACITY_STRENGTH", 1.0);
     const double cia_coeff = C_cia * cia_mult * comp / g;
 

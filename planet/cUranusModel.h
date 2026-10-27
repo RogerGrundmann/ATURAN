@@ -195,6 +195,7 @@ public:
     static double rad_albedo_bond() { return 0.300; }  // Uranus Bond albedo (S*(1-A) is ABSORBED)
     static double rad_x_H2()        { return 0.83;  }  // H2 mole fraction
     static double rad_x_He()        { return 0.15;  }  // He mole fraction
+    static double rad_default_cia_strength(){ return 1.0; }  // <TAG>_CIA_STRENGTH default (shared Radiation.h)
 
     // ---- Precipitation fields, for the SHARED Precipitation.h ----
     Array P_rain;
