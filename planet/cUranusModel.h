@@ -902,7 +902,9 @@ private:
 
 // molecular weights
     double m_h2 = 2.016;  // molecular weight of hydrogen in kg/Kmol (molar mass)
-    double m_he = 4.02602;  // molecular weight of helium in kg/Kmol
+    // molecular weight of helium in kg/Kmol: 4.0026 since 2026-10-27 (was the typo 4.02602, ATJUP row JUP-MHE;
+    // ATURAN_M_HE=4.02602 restores)
+    double m_he = [](){ const char* e = getenv("ATURAN_M_HE"); return e ? atof(e) : 4.0026; }();
     double m_nh3 = 17.03052;  // molecular weight of ammonia in kg/Kmol
     double m_nh4sh = 51.1114;  // molecular weight of ammonium hydrosulfide in kg/Kmol
     double m_h2s = 34.08088;  // molecular weight of hydrogen sulfide in kg/Kmol
