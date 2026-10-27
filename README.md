@@ -216,7 +216,8 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_TBUDGET_J` / `_K` | 90 / 180 | Column both instruments report, defaulting to the equator at mid-longitude |
 | `ATURAN_STEADY` | 1 | steady-state query in the report |
 | `ATURAN_METRIC_RADIUS` | **25362** | Uranus's mean radius in km, referring the 1/r metric factors to the planet rather than to `rad.z`'s 1..2. **ON by default** — set to `0` for the unshifted metric, which is bit-identical to the pre-flip default |
-| `ATURAN_LOCAL_RHO`, `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
+| `ATURAN_LOCAL_RHO` | 1 | local density p/(R_mix T) in the saturation / precipitation / MCA groups (since 2026-10-27; 0 = constant r_mix); `ATURAN_INIT_SPECIES_LOCAL_RHO` follows it |
+| `ATURAN_COSTHE_ABS`, `ATURAN_PDYN_UNITS` | — | legacy/behaviour switches |
 
 **Buoyancy and the hydrostatic split** — all default off; the model is bit-identical with them unset.
 
