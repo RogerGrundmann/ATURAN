@@ -161,7 +161,9 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
 | `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
-| `ATURAN_MCA` | 0 | moist convective adjustment with the Ledoux criterion every N iterations (H2O, NH3, H2S, CH4; shared `ConvectiveAdjustment.h`, knobs `_MCA_LEDOUX` `_LOADING` `_RELAX` `_PASSES` `_DEBUG`); meaningful with `ATURAN_LOCAL_RHO=1` |
+| `ATURAN_MCA` | 1 | moist convective adjustment with the Ledoux criterion every N iterations (H2O, NH3, H2S, CH4; shared `ConvectiveAdjustment.h`, knobs `_MCA_LEDOUX` `_LOADING` `_RELAX` `_PASSES` `_DEBUG`); meaningful with `ATURAN_LOCAL_RHO=1` |
+| `ATURAN_INIT_SUPERSAT` | 1 (since 2026-10-28; 1000 = the old 1e3) | factor on saturation in the set-up vapour (capped at the deep abundance); 1e3 started every deck up to 1000x supersaturated, and the set-up saturation adjustment then warmed the decks by up to 15-19 K over the dry adiabat (and inverted NH3 at i6-10), which the MCA fired on |
+| `ATURAN_MCA_INTERIOR` | 1 (since 2026-10-28, `mca_default_interior()`; 0 = the old column) | the MCA column leaves out the radial boundary planes i = 0 and i = im-1; with 0 it mixed the floor plane, `bcRadius` rewrote it, and the pair was unstable again every call (100 % of columns, 4.5-11 K per call; with 1: 0.007-0.014 K) |
 | `ATURAN_SVP_FIT` | 0 | fitted NH3 liquid / NH3 ice / H2O ice vapour pressures (shared `ATPhys.h`; NIST Antoine, Fray & Schmitt 2009, Murphy & Koop 2005); the ice sets act where the shared adjustment is selected (`ATURAN_SATADJ=1`) |
 | `ATURAN_SATADJ` | 1 | shared saturation adjustment, the default since 2026-10-10 (0 = the inherited routine) |
 

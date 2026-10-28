@@ -515,6 +515,10 @@ public:
     // and the shared algorithm leaves the field alone — one of the two behaviours had to be named
     // rather than assumed.
     static bool satadj_updates_pstat(){ return false; }
+    // <TAG>_MCA_INTERIOR default (shared ConvectiveAdjustment.h): leave the radial boundary planes out of the MCA column.
+    // true on ATURAN (2026-10-28, user picked "(a)"): the MCA mixed the floor plane, bcRadius undid it, 100 % of columns
+    // with 4.5-11 K per call; with it 0.007-0.014 K (satchk/mcagiants_2026-10-28 int.sh / utb). ATURAN_MCA_INTERIOR=0 restores.
+    static bool mca_default_interior(){ return true; }
     // Defaults of ATURAN_SATADJ_NEWTON and ATURAN_SATADJ_CONSERVE (shared SaturationAdjustment.h): ON since
     // 2026-10-09. They act only when the shared routine is selected (ATURAN_SATADJ, this model's
     // default since 2026-10-10). Run for 16 iterations: without them the shared

@@ -447,6 +447,16 @@ inline void MoistConvectiveAdjustment<Model>::run(){
             while(i0 < im && m.SeaMount.x[i0][j][k] == 1.0) i0++;
             int i1 = i0;
             while(i1 + 1 < im && m.SeaMount.x[i1 + 1][j][k] != 1.0) i1++;
+            // <TAG>_MCA_INTERIOR=1 (2026-10-28, ATJUP row GIANTS-MCA-DEFAULT; default Model::mca_default_interior(),
+            // true on ATURAN only, false = the column as before): leave the
+            // radial boundary planes i = 0 and i = im-1 out. bcRadius writes them from the interior and
+            // the Runge-Kutta step does not integrate them, so mixing them is undone every iteration.
+            // MEASURED on ATURAN (satchk/mcagiants_2026-10-28/utb, ATURAN_TB_DIAG, 8 it): the MCA put
+            // +7.44 K into i0 and took it from i1-3, the BC took -8.76 K back out of i0, and the pair
+            // was unstable again: 100 % of columns on every call. A column above a SeaMount keeps its
+            // first fluid cell, which is an integrated cell.
+            static const bool interior = ATPhys::env_int(TAG, "MCA_INTERIOR", Model::mca_default_interior() ? 1 : 0) != 0;
+            if(interior){ if(i0 == 0) i0 = 1; if(i1 == im - 1) i1 = im - 2; }
             if(i1 - i0 < 1) continue;
 
             // ---- Column state (mass fractions, K, bar, m) ----

@@ -379,6 +379,14 @@ void cUranusModel::init_vapour_cloud_ice(std::string gas,
     double t_add_equator     = 0.0;
     double t_add_pole        = 0.0;
     double magnus            = 1e3;
+    // ATURAN_INIT_SUPERSAT=<f> (2026-10-28, ATJUP row GIANTS-MCA-DEFAULT; DEFAULT 1 since 2026-10-28, user: "(a)";
+    // =1000 restores the 1e3 above): the vapour set-up
+    // is magnus x saturation, capped at the deep abundance, so with 1e3 every deck starts up to 1000x
+    // supersaturated; the set-up saturation adjustment condenses the excess and its latent heat
+    // warms the decks +14.5 K (i1) / +18.7 K (i12) over the dry adiabat at the equator -- the steep
+    // pairs the MCA fires on (satchk/mcagiants_2026-10-28/dbg). 1 = vapour at saturation.
+    static const double init_supersat = [](){ const char* e = getenv("ATURAN_INIT_SUPERSAT"); return e ? atof(e) : 1.0; }();
+    if(init_supersat > 0.0) magnus = init_supersat;
 
     if(gas == "CH4"){
         r_max_equator = r_ch4;
