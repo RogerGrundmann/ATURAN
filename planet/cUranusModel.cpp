@@ -25,6 +25,7 @@
 #include "RadiationUran.h"
 #include "PrecipitationUran.h"
 #include "PressureSolver.h"
+#include "ChromUran.h"         // ATURAN_CHROM, the chromophore tracer
 
 using namespace std;
 using namespace tinyxml2;
@@ -928,6 +929,7 @@ void cUranusModel::Run(){
         }
     }
 
+    chromInfo();                                                        // ATURAN_CHROM: one line when the tracer is on
     for(iter_n = 1; iter_n <= nm; iter_n++){
 
         tattribBegin();   // no-op unless ATURAN_TATTRIB is set
@@ -1091,6 +1093,7 @@ void cUranusModel::Run(){
                 for(int q_ = 0; q_ < UranUb::NTERM; q_++) for(int i = 0; i < im; i++) UranUb::st().acc[t_][r_][q_][i] = 0.0;
         }
 
+        chromUV();                                        // ATURAN_CHROM: the UV field the source reads
         RungeKuttaUran();
         bh_mark(BH_RK);
 
@@ -1253,6 +1256,7 @@ void cUranusModel::Run(){
                 { "CH4", &ch4, &ch4_cloud, &ch4_ice, ep_ch4, lv_ch4, ls_ch4, t_0_ch4,
                   C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, C_ch4_ice, L0_ch4_ice, del_alf_ch4_ice, del_bet_ch4_ice } };
             std::vector<Tr_> tracers = { { "NH4SH", &nh4sh, 0.0, true, 0.0 } };
+            if(chrom_on()) tracers.push_back({ "chrom", &chrom, 0.0, false, 0.0 });   // ATURAN_CHROM: mixed as ATJUP mixes it
             MoistConvectiveAdjustmentUran(*this, gases, tracers).run();
         }
         tb_mark(TB_AFTER); cwb_mark(TB_AFTER); bh_mark(BH_AFTER);
@@ -1410,6 +1414,8 @@ void cUranusModel::resetArrays(){
     nh3_cloud.initArray(im, jm, km, 0.0);           // nh3-cloud
     nh3_ice.initArray(im, jm, km, 0.0);             // nh3-ice
     nh4sh.initArray(im, jm, km, 0.0);                 // nh4sh-vapour
+    chrom.initArray(im, jm, km, 0.0);                 // chromophore (ATURAN_CHROM)
+    chrom_uv.initArray(im, jm, km, 0.0);              // its UV fraction
 
     tn.initArray(im, jm, km, ta);                    // temperature new
     un.initArray(im, jm, km, ua);                    // u-velocity component in r-direction new
@@ -1429,6 +1435,7 @@ void cUranusModel::resetArrays(){
     nh3_cloudn.initArray(im, jm, km, 0.0);            // nh3_cloud new
     nh3_icen.initArray(im, jm, km, 0.0);            // nh3_ice new
     nh4shn.initArray(im, jm, km, 0.0);                // nh4sh new
+    chromn.initArray(im, jm, km, 0.0);                // chromophore new
 
     massflux_h2s.initArray(im, jm, km, 0.0);    // mass flux h2s
     massflux_nh3.initArray(im, jm, km, 0.0);    // mass flux nh3
@@ -1479,6 +1486,7 @@ void cUranusModel::resetArrays(){
     acc_nh3_cloud.initArray(im, jm, km, 0.0);
     acc_nh3_ice.initArray(im, jm, km, 0.0);
     acc_nh4sh.initArray(im, jm, km, 0.0);
+    acc_chrom.initArray(im, jm, km, 0.0);   // RK4 stage accumulator
     acc_tke.initArray(im, jm, km, 0.0);
     acc_dis.initArray(im, jm, km, 0.0);
 
@@ -1550,6 +1558,7 @@ void cUranusModel::resetArrays(){
     rhs_nh3_cloud.initArray(im, jm, km, 0.0);        // auxilliar field RHS nh3_cloud
     rhs_nh3_ice.initArray(im, jm, km, 0.0);            // auxilliar field RHS nh3_ice
     rhs_nh4sh.initArray(im, jm, km, 0.0);                // auxilliar field RHS nh4sh
+    rhs_chrom.initArray(im, jm, km, 0.0);                // auxilliar field RHS chromophore
     rhs_tke.initArray(im, jm, km, 0.0);
     rhs_dis.initArray(im, jm, km, 0.0);
 
@@ -1627,6 +1636,7 @@ void cUranusModel::restoreVar(double coeff){
                 nh3_cloudn.x[i][j][k] = coeff * nh3_cloud.x[i][j][k];
                 nh3_icen.x[i][j][k] = coeff * nh3_ice.x[i][j][k];
                 nh4shn.x[i][j][k] = coeff * nh4sh.x[i][j][k];
+                chromn.x[i][j][k] = coeff * chrom.x[i][j][k];
 //                nh4sh_cloudn.x[i][j][k] = coeff * nh4sh_cloud.x[i][j][k];
             }
         }

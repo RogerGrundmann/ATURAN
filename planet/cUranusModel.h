@@ -165,6 +165,7 @@ public:
     Array acc_nh3_cloud;
     Array acc_nh3_ice;
     Array acc_nh4sh;
+    Array acc_chrom;
     Array acc_tke;              // RK4 accumulator for k*
     Array acc_dis;              // RK4 accumulator for dis*
 
@@ -1159,6 +1160,16 @@ private:
     static int cloudview_stride(){
         static const int s = [](){ const char* e = getenv("ATURAN_CLOUDVIEW_STRIDE"); return e ? atoi(e) : -1; }();
         return s; }
+    // ATURAN_CHROM=1 (2026-10-30, default 0 = off: chrom stays 0 everywhere, no output carries it): the
+    // chromophore tracer, ported from ATJUP_CHROM / ATSAT_CHROM with CH4 as the source -- a passive species made
+    // by UV photolysis where the UV reaches (source vapour self-shielding) and destroyed with a lifetime.
+    // The rates live in ChromUran.h.
+    static bool chrom_on(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_CHROM"); return e && atoi(e) != 0; }();
+        return v; }
+    double chromSource(int i, int j, int k);           // ChromUran.h, nondimensional d(chrom)/dt
+    void chromUV();                                     // ChromUran.h, chrom_uv once per iteration
+    void chromInfo();                                   // ChromUran.h, the startup line
 
     void searchMinMax_3D(string, string, 
         string, Array &, double coeff=1., 
@@ -1281,6 +1292,8 @@ private:
     Array nh3_cloud;            // nh3-cloud
     Array nh3_ice;                // nh3-ice
     Array nh4sh;                    // nh4sh-vapour
+    Array chrom;                    // chromophore tracer, kg/m3 (ATURAN_CHROM; ChromUran.h)
+    Array chrom_uv;                 // UV fraction reaching the cell, exp(-N_src,above / N_uv) (ChromUran.h)
 
     Array tn;                    // temperature new
     Array un;                    // u-velocity component in r-direction new
@@ -1299,6 +1312,7 @@ private:
     Array nh3_cloudn;            // nh3_cloud new
     Array nh3_icen;                 // nh3_ice new
     Array nh4shn;                    // nh4sh new
+    Array chromn;                    // chromophore new
 
     Array massflux_h2s;    // mass flux h2s
     Array massflux_nh3;    // mass flux nh3
@@ -1429,6 +1443,7 @@ private:
     Array rhs_nh3_cloud;        // auxilliar field RHS nh3_cloud
     Array rhs_nh3_ice;            // auxilliar field RHS nh3_ice
     Array rhs_nh4sh;                // auxilliar field RHS nh4sh
+    Array rhs_chrom;                // auxilliar field RHS chromophore
     Array rhs_tke;                  // tendency of k*,   assembled in RHS_Uran_Turb
     Array rhs_dis;                  // tendency of dis*, assembled in RHS_Uran_Turb
 

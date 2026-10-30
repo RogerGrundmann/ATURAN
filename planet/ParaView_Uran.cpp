@@ -91,9 +91,11 @@ void cUranusModel::paraview_panorama_vts(int n){
     // shared Reporting.h prints, so an array name means one thing in the .vtk and in the log.
     // See the note above the species block in Reporting.h for why NH4SH needs its own.
     ParaViewWriter<cUranusModel> pv(*this);
-    ofstream Uranus_panorama_vts_File = pv.open_panorama(n,
+    // ATURAN_CHROM (ChromUran.h): the chromophore array only when the tracer is on, so a default panorama is unchanged.
+    const std::string pano_scalars = std::string(
         "Temperature PressureDynamic PressureStatic NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce Q_Latent Q_Sensible BuoyancyForce Q_rad_mW_m3 Radiation Emissivity "
-        PANORAMA_TURB_PRECIP_SCALARS);
+        PANORAMA_TURB_PRECIP_SCALARS) + (chrom_on() ? "Chromophore_mgm3 " : "");
+    ofstream Uranus_panorama_vts_File = pv.open_panorama(n, pano_scalars.c_str());
     pv.panorama_velocity(Uranus_panorama_vts_File);
     pv.panorama_temperature(Uranus_panorama_vts_File);
     dump_array("u-component", u, u_0, Uranus_panorama_vts_File);
@@ -139,6 +141,8 @@ void cUranusModel::paraview_panorama_vts(int n){
     dump_array("Radiation", radiation, 1.0, Uranus_panorama_vts_File);
     dump_array("Emissivity", epsilon, 1.0, Uranus_panorama_vts_File);
     DUMP_TURB_PRECIP_VTS(Uranus_panorama_vts_File);
+
+    if(chrom_on()) dump_array("Chromophore_mgm3", chrom, 1e6, Uranus_panorama_vts_File);
 
     pv.close_panorama(Uranus_panorama_vts_File, n);
     return;
@@ -201,6 +205,7 @@ void cUranusModel::paraview_cloudview(int n){
     above("NH3Ice_above_gm2", nh3_ice);
     above("H2OIce_above_gm2", h2o_ice);
     above("CH4_above_gm2", ch4);
+    if(chrom_on()) above("Chrom_above_mgm2", chrom, 1.0e6);   // ATURAN_CHROM, ChromUran.h: not in PhotoRGB
 
     // PhotoRGB: one colour per point, red / green / blue in 0..1 (ParaView: colour by PhotoRGB, untick
     // "Map Scalars"). A RECIPE, not radiative transfer, and unlike ATJUP's not driven by coloured cloud:
@@ -293,6 +298,9 @@ void cUranusModel::paraview_vtk_radial(int n, int i_radial){
     dump_radial("jT_nh3", jT_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
     dump_radial("massflux_nh3", massflux_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
     dump_radial("difflux_nh3", difflux_nh3, 1e3, i_radial, Uranus_vtk_radial_File);
+
+    if(chrom_on()){ dump_radial("Chromophore_mgm3", chrom, 1e6, i_radial, Uranus_vtk_radial_File);
+                    dump_radial("ChromUV", chrom_uv, 1.0, i_radial, Uranus_vtk_radial_File); }
 
     dump_radial("NH4SH", nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
     dump_radial("w_nh4sh", w_nh4sh, 1e9, i_radial, Uranus_vtk_radial_File);
@@ -395,6 +403,9 @@ void cUranusModel::paraview_vtk_zonal(int n, int k_zonal){
     dump_zonal("massflux_nh3", massflux_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("difflux_nh3", difflux_nh3, 1e3, k_zonal, Uranus_vtk_zonal_File);
 
+    if(chrom_on()){ dump_zonal("Chromophore_mgm3", chrom, 1e6, k_zonal, Uranus_vtk_zonal_File);
+                    dump_zonal("ChromUV", chrom_uv, 1.0, k_zonal, Uranus_vtk_zonal_File); }
+
     dump_zonal("NH4SH", nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("w_nh4sh", w_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
     dump_zonal("massflux_nh4sh", massflux_nh4sh, 1e9, k_zonal, Uranus_vtk_zonal_File);
@@ -485,6 +496,9 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
     dump_longal("jT_nh3", jT_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
     dump_longal("massflux_nh3", massflux_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
     dump_longal("difflux_nh3", difflux_nh3, 1e3, j_longal, Uranus_vtk_longal_File);
+
+    if(chrom_on()){ dump_longal("Chromophore_mgm3", chrom, 1e6, j_longal, Uranus_vtk_longal_File);
+                    dump_longal("ChromUV", chrom_uv, 1.0, j_longal, Uranus_vtk_longal_File); }
 
     dump_longal("NH4SH", nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);
     dump_longal("w_nh4sh", w_nh4sh, 1e9, j_longal, Uranus_vtk_longal_File);

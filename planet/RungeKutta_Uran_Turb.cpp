@@ -326,6 +326,9 @@ void cUranusModel::RungeKuttaUran(){
                                        : acc_nh3_ice.x[i][j][k] + wgt * rhs_nh3_ice.x[i][j][k];
                     acc_nh4sh.x[i][j][k] = (stage == 0) ? wgt * rhs_nh4sh.x[i][j][k]
                                        : acc_nh4sh.x[i][j][k] + wgt * rhs_nh4sh.x[i][j][k];
+                    if(chrom_on())
+                        acc_chrom.x[i][j][k] = (stage == 0) ? wgt * rhs_chrom.x[i][j][k]
+                                          : acc_chrom.x[i][j][k] + wgt * rhs_chrom.x[i][j][k];
                     if(turb_on_rk){
                         acc_tke.x[i][j][k] = (stage == 0) ? wgt * rhs_tke.x[i][j][k]
                                            : acc_tke.x[i][j][k] + wgt * rhs_tke.x[i][j][k];
@@ -351,6 +354,7 @@ void cUranusModel::RungeKuttaUran(){
                         nh3_cloud.x[i][j][k] = nh3_cloudn.x[i][j][k] + c_in * rhs_nh3_cloud.x[i][j][k];
                         nh3_ice.x[i][j][k] = nh3_icen.x[i][j][k] + c_in * rhs_nh3_ice.x[i][j][k];
                         nh4sh.x[i][j][k] = nh4shn.x[i][j][k] + c_in * rhs_nh4sh.x[i][j][k];
+                        if(chrom_on()) chrom.x[i][j][k] = chromn.x[i][j][k] + c_in * rhs_chrom.x[i][j][k];
                         if(turb_on_rk){
                             tke.x[i][j][k] = AtomUtils::clamp(tken.x[i][j][k]
                                 + c_in * rhs_tke.x[i][j][k], 0.0, tke_max_nd);
@@ -386,6 +390,8 @@ void cUranusModel::RungeKuttaUran(){
                 nh3_cloud.x[i][j][k] = nh3_cloudn.x[i][j][k] + dt * acc_nh3_cloud.x[i][j][k] / 6.0;
                 nh3_ice.x[i][j][k] = nh3_icen.x[i][j][k] + dt * acc_nh3_ice.x[i][j][k] / 6.0;
                 nh4sh.x[i][j][k] = nh4shn.x[i][j][k] + dt * acc_nh4sh.x[i][j][k] / 6.0;
+                if(chrom_on())   // ATURAN_CHROM: not in the species clamp, so floored here, as ATJUP does
+                    chrom.x[i][j][k] = std::max(0.0, chromn.x[i][j][k] + dt * acc_chrom.x[i][j][k] / 6.0);
                 if(turb_on_rk){
                     tke.x[i][j][k] = AtomUtils::clamp(std::max(tken.x[i][j][k]
                         + dt * acc_tke.x[i][j][k] / 6.0, 0.0), 0.0, tke_max_nd);
