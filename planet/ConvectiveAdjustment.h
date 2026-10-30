@@ -448,7 +448,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
             int i1 = i0;
             while(i1 + 1 < im && m.SeaMount.x[i1 + 1][j][k] != 1.0) i1++;
             // <TAG>_MCA_INTERIOR=1 (2026-10-28, ATJUP row GIANTS-MCA-DEFAULT; default Model::mca_default_interior(),
-            // true on ATURAN only, false = the column as before): leave the
+            // true on all four since 2026-10-30 (ATURAN since 10-28), false = the column as before): leave the
             // radial boundary planes i = 0 and i = im-1 out. bcRadius writes them from the interior and
             // the Runge-Kutta step does not integrate them, so mixing them is undone every iteration.
             // MEASURED on ATURAN (satchk/mcagiants_2026-10-28/utb, ATURAN_TB_DIAG, 8 it): the MCA put
