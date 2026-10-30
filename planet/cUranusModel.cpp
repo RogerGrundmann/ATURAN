@@ -1346,6 +1346,8 @@ void cUranusModel::Run(){
             printTemperatureAttribution();   // no-op unless ATURAN_TATTRIB is set
         }
         if(vtk_stride > 0 ? (iter_n % vtk_stride == 0) : (iter_n % checkpoint == 0)) writeData();
+        // ATURAN_CLOUDVIEW_STRIDE=<n> > 0 (cUranusModel.h): the cloudview on its own cadence; unset rides with the panorama in writeData.
+        if(cloudview_stride() > 0 && iter_n % cloudview_stride() == 0) paraview_cloudview(iter_n);
 
         if(panorama_cnt == panorama_print) panorama_cnt = 0;
 

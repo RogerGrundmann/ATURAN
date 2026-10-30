@@ -1153,6 +1153,12 @@ private:
     void paraview_vtk_zonal(int n, int k_zonal);
     void paraview_panorama_vts(int n);
     void paraview_sphere_vts(int n);
+    // ATURAN_CLOUDVIEW_STRIDE (2026-10-30, ported from ATJUP's): iterations between Uranus_cloudview_<n>.vtk writes
+    // (paraview_cloudview, ParaView_Uran.cpp). Unset (-1) = together with the panorama .vts (writeData), 0 = never.
+    void paraview_cloudview(int n);
+    static int cloudview_stride(){
+        static const int s = [](){ const char* e = getenv("ATURAN_CLOUDVIEW_STRIDE"); return e ? atoi(e) : -1; }();
+        return s; }
 
     void searchMinMax_3D(string, string, 
         string, Array &, double coeff=1., 
