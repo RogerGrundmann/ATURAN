@@ -25,7 +25,8 @@
 #include "RadiationUran.h"
 #include "PrecipitationUran.h"
 #include "PressureSolver.h"
-#include "ChromUran.h"         // ATURAN_CHROM, the chromophore tracer
+#include "ChromUran.h"
+#include "ZseedUran.h"          // ATURAN_T_SEED / ATURAN_ZDEV (row ICE-FROZEN-FLOW)         // ATURAN_CHROM, the chromophore tracer
 
 using namespace std;
 using namespace tinyxml2;
@@ -686,6 +687,7 @@ void cUranusModel::Run(){
     BC_Uran(*this).bcTheta();                                           // extrapolation in j-direction alomg grid boundaries
     BC_Uran(*this).bcPhi();                                             // extrapolation in k-direction alomg grid boundaries
 
+    tSeed();                                                            // ATURAN_T_SEED: off unless set
     restoreVar(1.0);
 
     // The closure SEEDS k* and dis* algebraically (Turbulence<Planet>::init_fields) before the
@@ -1095,6 +1097,7 @@ void cUranusModel::Run(){
 
         chromUV();                                        // ATURAN_CHROM: the UV field the source reads
         RungeKuttaUran();
+        zdevDiag();                                       // ATURAN_ZDEV: print-only
         bh_mark(BH_RK);
 
         if(ub_on){

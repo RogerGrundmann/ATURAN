@@ -1170,6 +1170,8 @@ private:
     double chromSource(int i, int j, int k);           // ChromUran.h, nondimensional d(chrom)/dt
     void chromUV();                                     // ChromUran.h, chrom_uv once per iteration
     void chromInfo();                                   // ChromUran.h, the startup line
+    void tSeed();                                       // ZseedUran.h, ATURAN_T_SEED (row ICE-FROZEN-FLOW)
+    void zdevDiag();                                    // ZseedUran.h, ATURAN_ZDEV, print-only
 
     void searchMinMax_3D(string, string, 
         string, Array &, double coeff=1., 
