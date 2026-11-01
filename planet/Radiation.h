@@ -16,6 +16,7 @@
  *     Planet::rad_x_H2()         H2 mole fraction
  *     Planet::rad_x_He()         He mole fraction
  *     Planet::rad_default_cia_strength()  default of <TAG>_CIA_STRENGTH (2026-10-27: 3.9 on ATJUP, 1 elsewhere)
+ *     Planet::rad_default_bottom()        default of <TAG>_RAD_BOTTOM (2026-11-01: 0 on ATJUP, 1 elsewhere)
  *
  * WHICH NUMBERS LIVE WHERE, AND WHY THE LINE IS DRAWN THERE. The five above are MEASURED
  * PROPERTIES OF A PLANET: they have different values on Jupiter and Saturn because the planets
@@ -278,6 +279,9 @@ void Radiation<Planet>::run(){
     const double solar_mult = ATPhys::env_double(TAG, "SOLAR_STRENGTH", 1.0);
     const double sw_tau_bar = ATPhys::env_double(TAG, "SW_TAU_PER_BAR", k_sw);
     const double pi_ = 3.14159265358979323846;
+    // Deep radiative boundary: 0 = net F_int + Fsw, 1 = no divergence in the bottom layer. Default per planet
+    // via Planet::rad_default_bottom() (2026-11-01: 1 on ATSAT / ATNEPT / ATURAN, 0 on ATJUP).
+    const int    rad_bottom = ATPhys::env_int(TAG, "RAD_BOTTOM", Planet::rad_default_bottom());
 
     // Column diagnostics: the mean outgoing longwave, and where tau = 1 measured down from the
     // top falls. That second number is the photosphere, and it is the calibration question this
@@ -393,7 +397,18 @@ void Radiation<Planet>::run(){
             // Bottom boundary: net flux up through the deep interface must carry the intrinsic flux
             // PLUS whatever shortwave survived to depth (absorbed there and re-emitted in the
             // thermal channel), so the deep boundary emits Fd_bottom + F_int + Fsw_bottom.
-            Fu[i_base] = Fd[i_base] + F_int + Fsw[i_base];
+            // <TAG>_RAD_BOTTOM=1 (2026-11-01, row GIANTS-RAD-BOTTOM; =0 = the F_int line below; default per planet, see top):
+            // the F_int boundary holds the deep interface at net ~F_int (~2 W/m2) while the opaque
+            // layers above exchange sigma (T_i^4 - T_i+1^4), ~110 W/m2 at the bottom, so layer 0
+            // showed a jump (Radiation 60 vs 113 W/m2, Q_rad -9 mW/m3 on ATSAT P1000). =1 gives the
+            // bottom layer no radiative divergence instead: net flux at its bottom = net flux at
+            // its top. With Fd[i_base] = (1-eps) Fd[i_base+1] + eps B that is, for any eps > 0,
+            //     Fu[i_base] = 2 B[i_base] - Fd[i_base+1].
+            // F_int is then no longer imposed: the deep boundary passes what the interior carries.
+            if(rad_bottom == 1)
+                Fu[i_base] = std::max(0.0, 2.0 * B[i_base] - Fd[i_base + 1]);
+            else
+                Fu[i_base] = Fd[i_base] + F_int + Fsw[i_base];
 
             // Upward sweep (bottom -> top). Fu[i+1] is the upward flux leaving the top of layer i
             // (= entering the bottom of layer i+1).

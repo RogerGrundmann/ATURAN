@@ -144,6 +144,7 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_SOLAR_STRENGTH` | 1.0 | scale the absorbed insolation |
 | `ATURAN_SW_TAU_PER_BAR` | 1.0 | move the shortwave absorption level |
 | `ATURAN_CIA_STRENGTH` | 1.0 | scale the H₂/He collision-induced opacity |
+| `ATURAN_RAD_BOTTOM` | 1 | no radiative divergence in the bottom layer (`Fu = 2 B - Fd` above it; removes the level-0 jump in Radiation / Q_rad, the bottom is opaque so the state is unchanged); 0 = the old F_int bottom; default via `rad_default_bottom()` since 2026-11-01 (row GIANTS-RAD-BOTTOM) |
 | `ATURAN_OPACITY_STRENGTH` | 1.0 | scale the gas-band and cloud opacity |
 
 **Microphysics and turbulence**
