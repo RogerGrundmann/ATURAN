@@ -566,7 +566,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "<VTKFile type=\"StructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n"  << endl;
     Uranus_sphere_vts_File <<  " <StructuredGrid WholeExtent=\"" << 1 << " "<< im << " "<< 2 << " " << jm - 1 << " "<< 1 << " " << km << "\">\n"  << endl;
     Uranus_sphere_vts_File <<  "  <Piece Extent=\"" << 1 << " "<< im << " "<< 2 << " " << jm - 1 << " "<< 1 << " " << km << "\">\n"  << endl;
-    Uranus_sphere_vts_File <<  "   <PointData Vectors=\"Velocity\" Scalars=\"Temperature PressureDyn PressureStat  H2S H2SCloud H2SIce NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce \">\n"  << endl;
+    Uranus_sphere_vts_File <<  "   <PointData Vectors=\"Velocity\" Scalars=\"Temperature PressureDyn PressureStat  H2S H2SCloud H2SIce NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce  tke_m2s2 dis_nd prod_nd\">\n"  << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" Name=\"Velocity\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
         sinphi = sin( phi.z[k]);
@@ -828,6 +828,46 @@ void cUranusModel::paraview_sphere_vts(int n){
 */
     Uranus_sphere_vts_File <<  "\n"  << endl;
     Uranus_sphere_vts_File <<  "    </DataArray>\n"  << endl;
+    // tke / dis / prod (2026-11-01, user: "add tke, dis and prod to the sphere printout in all giants"): the panorama's names
+    // and units (tke_m2s2 = tke * u_0^2, dis_nd and prod_nd as computed); scientific, since dis and prod are far below
+    // the 4 fixed decimals of this file (reset afterwards). Pole rows left out as for every array here.
+    Uranus_sphere_vts_File.setf(ios::scientific, ios::floatfield); Uranus_sphere_vts_File.precision(6);
+    Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"tke_m2s2\" format=\"ascii\">\n"  << endl;
+    for(int k = 0; k < km; k++){
+        for(int j = 1; j < jm - 1; j++){
+            for(int i = 0; i < im; i++){
+                Uranus_sphere_vts_File << u_0 * u_0 * tke.x[i][j][k] << endl;
+            }
+            Uranus_sphere_vts_File <<  "\n"  << endl;
+        }
+        Uranus_sphere_vts_File <<  "\n"  << endl;
+    }
+    Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
+    Uranus_sphere_vts_File.setf(ios::scientific, ios::floatfield); Uranus_sphere_vts_File.precision(6);
+    Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"dis_nd\" format=\"ascii\">\n"  << endl;
+    for(int k = 0; k < km; k++){
+        for(int j = 1; j < jm - 1; j++){
+            for(int i = 0; i < im; i++){
+                Uranus_sphere_vts_File << 1.0 * dis.x[i][j][k] << endl;
+            }
+            Uranus_sphere_vts_File <<  "\n"  << endl;
+        }
+        Uranus_sphere_vts_File <<  "\n"  << endl;
+    }
+    Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
+    Uranus_sphere_vts_File.setf(ios::scientific, ios::floatfield); Uranus_sphere_vts_File.precision(6);
+    Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"prod_nd\" format=\"ascii\">\n"  << endl;
+    for(int k = 0; k < km; k++){
+        for(int j = 1; j < jm - 1; j++){
+            for(int i = 0; i < im; i++){
+                Uranus_sphere_vts_File << 1.0 * prod.x[i][j][k] << endl;
+            }
+            Uranus_sphere_vts_File <<  "\n"  << endl;
+        }
+        Uranus_sphere_vts_File <<  "\n"  << endl;
+    }
+    Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
+    Uranus_sphere_vts_File.setf(ios::fixed, ios::floatfield); Uranus_sphere_vts_File.precision(4);
     Uranus_sphere_vts_File <<  "   </PointData>\n" << endl;
     Uranus_sphere_vts_File <<  "   <Points>\n"  << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n"  << endl;
