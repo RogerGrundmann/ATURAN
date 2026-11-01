@@ -541,6 +541,11 @@ void cUranusModel::paraview_vtk_longal(int n, int j_longal){
  * 
 */
 void cUranusModel::paraview_sphere_vts(int n){
+    // The pole rows j = 0 and j = jm-1 (the = 0 / 180 deg) are NOT written (ported from ATSAT,
+    // 2026-11-01). There sin(the) = 0, so all km longitudes are one point and every cell touching
+    // the pole is collapsed; ParaView's Contour (vtkGridSynchronizedTemplates3D, normals on) cannot
+    // invert that cell's Jacobian and prints "Unable to factor linear system" / "Cannot compute
+    // gradient of grid". The sphere spans 1..179 deg (extent j = 2..jm-1); the panorama keeps the poles.
     using namespace ParaViewIO;
     double x, y, z, sinthe, sinphi, costhe, cosphi;
     // Display units, settled across all four models: species and their fluxes in g/m3 (1e3), the
@@ -559,21 +564,22 @@ void cUranusModel::paraview_sphere_vts(int n){
     }
     Uranus_sphere_vts_File <<  "<?xml version=\"1.0\"?>\n"  << endl;
     Uranus_sphere_vts_File <<  "<VTKFile type=\"StructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n"  << endl;
-    Uranus_sphere_vts_File <<  " <StructuredGrid WholeExtent=\"" << 1 << " "<< im << " "<< 1 << " " << jm << " "<< 1 << " " << km << "\">\n"  << endl;
-    Uranus_sphere_vts_File <<  "  <Piece Extent=\"" << 1 << " "<< im << " "<< 1 << " " << jm << " "<< 1 << " " << km << "\">\n"  << endl;
+    Uranus_sphere_vts_File <<  " <StructuredGrid WholeExtent=\"" << 1 << " "<< im << " "<< 2 << " " << jm - 1 << " "<< 1 << " " << km << "\">\n"  << endl;
+    Uranus_sphere_vts_File <<  "  <Piece Extent=\"" << 1 << " "<< im << " "<< 2 << " " << jm - 1 << " "<< 1 << " " << km << "\">\n"  << endl;
     Uranus_sphere_vts_File <<  "   <PointData Vectors=\"Velocity\" Scalars=\"Temperature PressureDyn PressureStat  H2S H2SCloud H2SIce NH3 NH3Cloud NH3Ice H2O H2OCloud H2OIce \">\n"  << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" Name=\"Velocity\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
         sinphi = sin( phi.z[k]);
         cosphi = cos( phi.z[k]);
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             sinthe = sin(the.z[j]);
             costhe = cos(the.z[j]);
             for(int i = 0; i < im; i++){
-                aux_u.x[i][j][k] = sinthe * cosphi * u.x[i][j][k] + costhe * cosphi * v.x[i][j][k] - sinphi * w.x[i][j][k];
-                aux_v.x[i][j][k] = sinthe * sinphi * u.x[i][j][k] + sinphi * costhe * v.x[i][j][k] + cosphi * w.x[i][j][k];
-                aux_w.x[i][j][k] = costhe * u.x[i][j][k] - sinthe * v.x[i][j][k];
-                Uranus_sphere_vts_File << aux_u.x[i][j][k] << " " << aux_v.x[i][j][k] << " " << aux_w.x[i][j][k]  << endl;
+                // locals, not aux_*: aux_u is the pressure solver's input (see ATSAT ParaView_Sat.cpp).
+                const double cart_u = sinthe * cosphi * u.x[i][j][k] + costhe * cosphi * v.x[i][j][k] - sinphi * w.x[i][j][k];
+                const double cart_v = sinthe * sinphi * u.x[i][j][k] + sinphi * costhe * v.x[i][j][k] + cosphi * w.x[i][j][k];
+                const double cart_w = costhe * u.x[i][j][k] - sinthe * v.x[i][j][k];
+                Uranus_sphere_vts_File << cart_u << " " << cart_v << " " << cart_w  << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -583,7 +589,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"Temperature\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << t.x[i][j][k] * t_ref - 273.15 << endl;
             }
@@ -595,7 +601,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"PressureDyn\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * p_dyn.x[i][j][k] << endl;
             }
@@ -608,7 +614,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"PressureStat\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e-3 * p_stat.x[i][j][k] << endl;
             }
@@ -621,7 +627,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2O\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2o.x[i][j][k] << endl;
             }
@@ -633,7 +639,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2S\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2s.x[i][j][k] << endl;
             }
@@ -645,7 +651,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"NH3\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * nh3.x[i][j][k] << endl;
             }
@@ -657,7 +663,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"NH4SH\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e9 * nh4sh.x[i][j][k] << endl;
             }
@@ -669,7 +675,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2OCloud\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2o_cloud.x[i][j][k] << endl;
             }
@@ -682,7 +688,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2SCloud\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2s_cloud.x[i][j][k] << endl;
             }
@@ -695,7 +701,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"NH3Cloud\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * nh3_cloud.x[i][j][k] << endl;
             }
@@ -708,7 +714,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2.x[i][j][k] << endl;
             }
@@ -722,7 +728,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2OIce\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2o_ice.x[i][j][k] << endl;
             }
@@ -735,7 +741,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"H2SIce\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * h2s_ice.x[i][j][k] << endl;
             }
@@ -748,7 +754,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"NH3Ice\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * nh3_ice.x[i][j][k] << endl;
             }
@@ -761,7 +767,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"HE\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << 1e3 * he.x[i][j][k] << endl;
             }
@@ -774,9 +780,9 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"u-Component\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << u_0 * aux_u.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << u_0 * u.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -786,9 +792,9 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"v-Component\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << u_0 * aux_v.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << u_0 * v.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -798,9 +804,9 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"w-Component\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
-                Uranus_sphere_vts_File << u_0 * aux_w.x[i][j][k] << endl;
+                Uranus_sphere_vts_File << u_0 * w.x[i][j][k] << endl;
             }
             Uranus_sphere_vts_File <<  "\n"  << endl;
         }
@@ -811,7 +817,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "    </DataArray>\n" << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" Name=\"Seamount\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 Uranus_sphere_vts_File << SeaMount.x[i][j][k] << endl;
             }
@@ -826,7 +832,7 @@ void cUranusModel::paraview_sphere_vts(int n){
     Uranus_sphere_vts_File <<  "   <Points>\n"  << endl;
     Uranus_sphere_vts_File <<  "    <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">\n"  << endl;
     for(int k = 0; k < km; k++){
-        for(int j = 0; j < jm; j++){
+        for(int j = 1; j < jm - 1; j++){
             for(int i = 0; i < im; i++){
                 x = rad.z[i] * sin( the.z[j])* cos(phi.z[k]);
                 y = rad.z[i] * sin( the.z[j])* sin(phi.z[k]);
