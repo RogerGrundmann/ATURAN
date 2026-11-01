@@ -419,8 +419,9 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // ~77x SMALLER than the molecular background 1/re, so coupling changed almost nothing.
     // ATURAN's seeded nue* is 0.000165 against 1/re = 0.001 — 6.1x smaller. A coupling that does
     // almost nothing is worth knowing about before it is trusted.
+    // DEFAULT 1.0 since 2026-11-01 (user: "turbulence should be default always", closure on + coupling 1; row GIANTS-TURB-FREE); =0 restores.
     static const double turb_coupling = [](){
-        const char* e = getenv("ATURAN_TURB_COUPLING"); return e ? atof(e) : 0.0; }();
+        const char* e = getenv("ATURAN_TURB_COUPLING"); return e ? atof(e) : 1.0; }();
     constexpr double Pr_t = 0.9;
     const double nue_t   = (turb_coupling != 0.0 && std::isfinite(nue.x[i][j][k]))
                          ? turb_coupling * std::max(0.0, nue.x[i][j][k]) : 0.0;

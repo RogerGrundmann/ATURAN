@@ -160,7 +160,8 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_PRECIP_DIAG=1` | off | print-only: per species the mean column-max precipitation flux, its latent flux against the emitted flux, and the cells on the flux cap |
 | `ATURAN_TURB` | unset | the closure runs whenever `turb_model` is not `none` (default since 2026-10-11); `ATURAN_TURB=0` switches it off |
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
-| `ATURAN_TURB_COUPLING` | 0.0 | feed the eddy viscosity into momentum, heat and species diffusion |
+| `ATURAN_TURB_COUPLING` | 1.0 | feed the eddy viscosity into momentum, heat and species diffusion; default 1.0 since 2026-11-01, 0 restores |
+| `ATURAN_TURB_FREE` | 1 | no wall law and no surface boundary layer in the closure: uniform background k / omega at the start, u_tau the calm-air floor everywhere, the k-epsilon / SST wall distance 'far' (free-flow form); 0 restores the ATOM surface picture (row GIANTS-TURB-FREE, 2026-11-01) |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
 | `ATURAN_MCA` | 1 | moist convective adjustment with the Ledoux criterion every N iterations (H2O, NH3, H2S, CH4; shared `ConvectiveAdjustment.h`, knobs `_MCA_LEDOUX` `_LOADING` `_RELAX` `_PASSES` `_DEBUG`); meaningful with `ATURAN_LOCAL_RHO=1` |
 | `ATURAN_INIT_SUPERSAT` | 1 (since 2026-10-28; 1000 = the old 1e3) | factor on saturation in the set-up vapour (capped at the deep abundance); 1e3 started every deck up to 1000x supersaturated, and the set-up saturation adjustment then warmed the decks by up to 15-19 K over the dry adiabat (and inverted NH3 at i6-10), which the MCA fired on |
@@ -533,7 +534,7 @@ None of these stops a run; all of them affect what a result means.
    dormant one, and a run that touches it is reporting a collapse, not a temperature.
 
 6. **The precipitation and turbulence modules are diagnostic-only here.** They fill their arrays and
-   nothing reads them back: `S_precip_*` reaches no RHS and `ATURAN_TURB_COUPLING` defaults to 0.
+   nothing reads them back: `S_precip_*` reaches no RHS (`ATURAN_TURB_COUPLING` defaults to 1.0 since 2026-11-01).
    Switching either on changes plots, not physics. Radiation is no longer in this list — see item 3.
 
 7. **The multi-thread race is fixed; one order-dependent diagnostic remains.** It was
