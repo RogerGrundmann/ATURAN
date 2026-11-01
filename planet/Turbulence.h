@@ -152,6 +152,19 @@ public:
             return e ? atof(e) : L_atm_m() / double(m.im - 1); }();
         return v;
     }
+    // <TAG>_TURB_CLAMP_PASS (2026-11-01, row SAT-TURB-THREADS; DEFAULT 1 on the user's word "build the fix as the new
+    // default"; 0 restores the in-loop form): compute_sources() clamped each cell's own tke / dis at the start of its
+    // iteration and floored k at the end, while it READ the j+-1 / k+-1 neighbours of tke / dis for the theta / phi
+    // gradients -- inside one `omp parallel for collapse(2)` over (j, k). Whether a neighbour was already clamped
+    // depended on the static chunk boundaries, i.e. on the thread count (a data race): ATSAT 6 vs 12 threads, 4 it,
+    // differed in 145 173 restart bytes, and with the loop serial they were identical (satchk/turbthreads_2026-11-01).
+    // =1: the clamp runs as a pass BEFORE the loop and the floor / clamps as a pass AFTER it, so the loop reads every
+    // neighbour in one state; the result no longer depends on the thread count (it also differs slightly from a
+    // 1-thread run of the old form, whose serial order decided which neighbours were clamped).
+    static int turb_clamp_pass(){
+        static const int v = [](){ const char* e = ATPhys::env_for(Planet::planet_tag(), "TURB_CLAMP_PASS"); return e ? atoi(e) : 1; }();
+        return v;
+    }
     static int abl_taper(){
         static const int v = [](){ const char* e = ATPhys::env_for(Planet::planet_tag(), "ABL_TAPER"); return e ? atoi(e) : 0; }();
         return v;
@@ -593,6 +606,41 @@ inline void Turbulence<Planet>::compute_sources(){
     const double dis_min_l = dis_min;
     const bool phi_per = ATPhys::phi_periodic<Planet>();        // <TAG>_BC_PHI_PERIODIC
     const int  k_first = ATPhys::phi_first(phi_per);
+    const bool clamp_pass = (turb_clamp_pass() != 0);              // <TAG>_TURB_CLAMP_PASS
+
+    // The per-column k floor, and the two per-cell pieces that read only the cell itself. They run INSIDE the
+    // loop with TURB_CLAMP_PASS 0 (the old form) and as separate passes around it with 1.
+    auto k_bg_of = [&](int j, int k)->double{
+        const double vs = m.vel_star.y[j][k];
+        // <TAG>_TURB_FREE: TURB_K_BG. The else branch is the old expression TOKEN FOR TOKEN: regrouped as
+        // (0.01 vs^2 / sqrt(C)) / u_0^2 it rounds differently in the last bit, and through the k floor that
+        // moved k* in 126k restart bytes with TURB_FREE 0 (satchk/turbtest_2026-11-01 A, 2026-11-01).
+        return turb_free() ? turb_k_bg() / (m.u_0 * m.u_0)
+                           : 0.01 * vs * vs / (std::sqrt(C_nue_l) * m.u_0 * m.u_0); };
+    auto clamp_in = [&](int i, int j, int k){
+        m.tke.x[i][j][k] = std::max(0.0,       m.tke.x[i][j][k]);
+        m.dis.x[i][j][k] = std::max(dis_min_l, m.dis.x[i][j][k]); };
+    auto clamp_out = [&](int i, int j, int k, double k_bg_nd){
+        // Caps: nue_max is a 1000 m2/s physical cap made dimensionless;
+        // the source caps bound the P-Y balance and stop the 1/sin^2(theta)
+        // amplification in the cross-diffusion term blowing up at the poles.
+        const double nue_max = nue_max_phys() / (m.u_0 * L_atm_m());
+        m.tke.x[i][j][k] = std::max(k_bg_nd,   m.tke.x[i][j][k]);
+        m.dis.x[i][j][k] = std::max(dis_min_l, m.dis.x[i][j][k]);
+        m.nue.x[i][j][k] = clamp3(m.nue.x[i][j][k], 0.0, nue_max);
+
+        const double dis_src_max = 20.0 * m.dis.x[i][j][k] * m.dis.x[i][j][k];
+        m.dis_source.x[i][j][k] = clamp3(m.dis_source.x[i][j][k], -dis_src_max, dis_src_max);
+        const double tke_src_max = 20.0 * m.tke.x[i][j][k] * m.dis.x[i][j][k];
+        m.tke_source.x[i][j][k] = clamp3(m.tke_source.x[i][j][k], -tke_src_max, tke_src_max); };
+
+    if(clamp_pass){
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int j = 1; j < m.jm - 1; j++)
+            for(int k = k_first; k < m.km - 1; k++)
+                for(int i = 1; i < m.im - 1; i++)
+                    if(!is_land(i, j, k)) clamp_in(i, j, k);
+    }
 
     #pragma omp parallel for collapse(2) schedule(static)
     for(int j = 1; j < m.jm - 1; j++){
@@ -603,11 +651,7 @@ inline void Turbulence<Planet>::compute_sources(){
             const double y_mount = height_m(i_mount);               // surface height [m]
 
             const double vs      = m.vel_star.y[j][k];
-            // <TAG>_TURB_FREE: TURB_K_BG. The else branch is the old expression TOKEN FOR TOKEN: regrouped as
-            // (0.01 vs^2 / sqrt(C)) / u_0^2 it rounds differently in the last bit, and through the k floor that
-            // moved k* in 126k restart bytes with TURB_FREE 0 (satchk/turbtest_2026-11-01 A, 2026-11-01).
-            const double k_bg_nd = turb_free() ? turb_k_bg() / (m.u_0 * m.u_0)
-                                               : 0.01 * vs * vs / (std::sqrt(C_nue_l) * m.u_0 * m.u_0);
+            const double k_bg_nd = k_bg_of(j, k);
 
             for(int i = 1; i < m.im - 1; i++){
                 if(is_land(i, j, k)) continue;
@@ -638,9 +682,8 @@ inline void Turbulence<Planet>::compute_sources(){
                 const double inv_rm2dthe       = inv_2dthe / rm;
                 const double inv_rmsinthe2dphi = inv_2dphi / rmsinthe;
 
-                // Enforce floors before any reads.
-                m.tke.x[i][j][k] = std::max(0.0,       m.tke.x[i][j][k]);
-                m.dis.x[i][j][k] = std::max(dis_min_l, m.dis.x[i][j][k]);
+                // Enforce floors before any reads (TURB_CLAMP_PASS 1: done for every cell before this loop).
+                if(!clamp_pass) clamp_in(i, j, k);
 
                 // ---- velocity gradients ----
                 const double dudr = (m.u.x[i+1][j][k] - m.u.x[i-1][j][k]) * inv_2dr * exp_rm;
@@ -759,20 +802,20 @@ inline void Turbulence<Planet>::compute_sources(){
                         Omega, Omega);
                 }
 
-                // Caps: nue_max is a 1000 m2/s physical cap made dimensionless;
-                // the source caps bound the P-Y balance and stop the 1/sin^2(theta)
-                // amplification in the cross-diffusion term blowing up at the poles.
-                const double nue_max = nue_max_phys() / (m.u_0 * L_atm_m());
-                m.tke.x[i][j][k] = std::max(k_bg_nd,   m.tke.x[i][j][k]);
-                m.dis.x[i][j][k] = std::max(dis_min_l, m.dis.x[i][j][k]);
-                m.nue.x[i][j][k] = clamp3(m.nue.x[i][j][k], 0.0, nue_max);
-
-                const double dis_src_max = 20.0 * m.dis.x[i][j][k] * m.dis.x[i][j][k];
-                m.dis_source.x[i][j][k] = clamp3(m.dis_source.x[i][j][k], -dis_src_max, dis_src_max);
-                const double tke_src_max = 20.0 * m.tke.x[i][j][k] * m.dis.x[i][j][k];
-                m.tke_source.x[i][j][k] = clamp3(m.tke_source.x[i][j][k], -tke_src_max, tke_src_max);
+                // The floor and the caps (TURB_CLAMP_PASS 1: done for every cell after this loop).
+                if(!clamp_pass) clamp_out(i, j, k, k_bg_nd);
             }
         }
+    }
+
+    if(clamp_pass){
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int j = 1; j < m.jm - 1; j++)
+            for(int k = k_first; k < m.km - 1; k++){
+                const double k_bg_nd = k_bg_of(j, k);
+                for(int i = 1; i < m.im - 1; i++)
+                    if(!is_land(i, j, k)) clamp_out(i, j, k, k_bg_nd);
+            }
     }
 }
 

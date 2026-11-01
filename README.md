@@ -162,6 +162,7 @@ and turbulence remain diagnostic-only here.
 | `ATURAN_TURB_MODEL` | *param* | override `turb_model` (`k_epsilon`, `k_omega`, `k_omega_SST`) |
 | `ATURAN_TURB_COUPLING` | 1.0 | feed the eddy viscosity into momentum, heat and species diffusion; default 1.0 since 2026-11-01, 0 restores |
 | `ATURAN_TURB_FREE` | 1 | no wall law and no surface boundary layer in the closure: uniform background k / omega at the start, u_tau the calm-air floor everywhere, the k-epsilon / SST wall distance 'far' (free-flow form); 0 restores the ATOM surface picture (row GIANTS-TURB-FREE, 2026-11-01) |
+| `ATURAN_TURB_CLAMP_PASS` | 1 | the closure's clamp (k >= 0, omega >= min) runs as a pass before its source loop and the k floor / caps as a pass after it, so the loop no longer reads half-updated neighbours and the result does not depend on the thread count; 0 restores the in-loop form (row SAT-TURB-THREADS, 2026-11-01) |
 | `ATURAN_CONV_ADJ` | 0 | dry convective adjustment |
 | `ATURAN_MCA` | 1 | moist convective adjustment with the Ledoux criterion every N iterations (H2O, NH3, H2S, CH4; shared `ConvectiveAdjustment.h`, knobs `_MCA_LEDOUX` `_LOADING` `_RELAX` `_PASSES` `_DEBUG`); meaningful with `ATURAN_LOCAL_RHO=1` |
 | `ATURAN_INIT_SUPERSAT` | 1 (since 2026-10-28; 1000 = the old 1e3) | factor on saturation in the set-up vapour (capped at the deep abundance); 1e3 started every deck up to 1000x supersaturated, and the set-up saturation adjustment then warmed the decks by up to 15-19 K over the dry adiabat (and inverted NH3 at i6-10), which the MCA fired on |
