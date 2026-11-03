@@ -299,8 +299,22 @@ inline void ConvectiveAdjustment<Model>::run(){
  *
  * Equilibrium means: below the gas's t_0 the condensate is ice and the vapour is at ice saturation,
  * above it liquid at liquid saturation -- the saturation adjustment's BERGERON=2 phase rule, ATJUP's
- * default. With another rule the next saturation adjustment re-partitions the mixed cells; the
- * adjustment itself conserves h_L and mass whatever the phase. Nothing precipitates here.
+ * default. The adjustment itself conserves h_L and mass whatever the phase. Nothing precipitates here.
+ *
+ * <TAG>_MCA_PHASE (2026-11-03, ATJUP-register row GIANTS-CH4-PHASE; default Model::mca_default_phase():
+ * 1 on ATSAT / ATNEPT / ATURAN since 2026-11-03, 0 on ATJUP = the rule above).
+ * The note used to say that with another rule "the next saturation adjustment re-partitions the mixed
+ * cells". It does not: with BERGERON 0 the adjustment re-enters only cells supersaturated against LIQUID,
+ * so a cell this routine leaves all-ice at ice saturation stays all-ice. MEASURED on ATNEPT (ATNEPT_CWB_PHASE,
+ * 200 it): this stage turned H2O cloud -1.63e6 / ice +1.64e6 g/m2 and removed all of the CH4 cloud while the
+ * saturation adjustment made both phases. <TAG>_MCA_PHASE=1 uses the saturation adjustment's own rule
+ * instead: with <TAG>_SATADJ_BERGERON 0 (env, else Model::satadj_default_bergeron()) the temperature split
+ * CND = (T - t_00) / (t_0 - t_00) clipped to [0, 1] -- target CND q_liq + (1 - CND) q_ice, latent heat
+ * CND lv + (1 - CND) ls, condensate CND liquid / (1 - CND) ice, as the adjustment deposits; with BERGERON
+ * != 0, or a gas without t_00 (Gas::t_00 <= 0 or >= t_0), the rule above. So ATJUP (BERGERON 2) is
+ * unchanged with either value. MEASURED 0 -> 1 (ATSAT/satchk/mcaphase_2026-11-03, 200 it from scratch, liquid
+ * vs split-expected on zonal 180): Saturn NH3 0.31 -> 0.99x; Neptune H2O 0.10 -> 0.98x, NH3 0.17 -> 1.01x,
+ * H2S 0.38 -> 0.90x, CH4 0.008 -> 0.98x.
  *
  * CONSERVED, per column: sum w h_L and sum w q_t of every gas and tracer, w = rho dz (the mass of
  * the cell per unit area: rho the model's rho_at, dz the face-centred thickness from the layer
@@ -343,6 +357,8 @@ public:
         double t_0;                                 // K: liquid above, ice below
         double C, L0, R, del_alf, del_bet;          // liquid set, ATPhys::saturation_vapour_pressure
         double C_i, L0_i, del_alf_i, del_bet_i;     // ice set
+        double t_00;                                // K: all ice below (<TAG>_MCA_PHASE=1 only); LAST, so an
+                                                    // initialiser without it leaves 0 = the t_0 rule
     };
     // A field mixed without a phase change, as a density [kg/m3]. ep > 0: a gas, in the virtual
     // temperature with 1/ep - 1; condensed: a solid or liquid, in the loading; neither: passive.
@@ -378,6 +394,11 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     static const bool   loading  = ATPhys::env_int(TAG, "MCA_LOADING", 1) != 0;
     static const double relax    = std::min(1.0, std::max(0.0, ATPhys::env_double(TAG, "MCA_RELAX", 1.0)));
     static const int    max_pass = [TAG](){ const int v = ATPhys::env_int(TAG, "MCA_PASSES", 64); return v > 0 ? v : 64; }();
+    // <TAG>_MCA_PHASE (see the note at the top): 1 = the saturation adjustment's temperature split when its BERGERON is 0.
+    static const bool   phase_split = [TAG](){
+        if(ATPhys::env_int(TAG, "MCA_PHASE", Model::mca_default_phase() ? 1 : 0) == 0) return false;
+        const char* e = ATPhys::env_for(TAG, "SATADJ_BERGERON");
+        return (e ? atoi(e) : Model::satadj_default_bergeron()) == 0; }();
 
     const int    ng = (int)G.size(), nt = (int)TR.size(), im = m.im;
     const double cp = m.cp_mix, grav = m.g;
@@ -386,15 +407,31 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     constexpr double tol_T    = 1.0e-10;        // K, its bracket width
 
     // Mass fraction at saturation over the phase the temperature selects, and its latent heat.
+    // <TAG>_MCA_PHASE=1: liquid share of the condensate at T, the saturation adjustment's split; -1 = not used for g.
+    auto cnd = [&](int g, double T) -> double {
+        const Gas& s = G[g];
+        if(!phase_split || !(s.t_00 > 0.0) || !(s.t_00 < s.t_0)) return -1.0;
+        return T <= s.t_00 ? 0.0 : (T >= s.t_0 ? 1.0 : (T - s.t_00) / (s.t_0 - s.t_00));
+    };
     auto qsat = [&](int g, double T, double p) -> double {
         const Gas& s = G[g];
+        const double f = cnd(g, T);
+        if(f >= 0.0){
+            const double El = ATPhys::saturation_vapour_pressure(T, s.C,   s.L0,   s.R, s.del_alf,   s.del_bet);
+            const double Ei = ATPhys::saturation_vapour_pressure(T, s.C_i, s.L0_i, s.R, s.del_alf_i, s.del_bet_i);
+            const double q = s.ep * (f * El + (1.0 - f) * Ei) / p;
+            return std::isfinite(q) ? q : 0.0;
+        }
         const double E = (T >= s.t_0)
             ? ATPhys::saturation_vapour_pressure(T, s.C,   s.L0,   s.R, s.del_alf,   s.del_bet)
             : ATPhys::saturation_vapour_pressure(T, s.C_i, s.L0_i, s.R, s.del_alf_i, s.del_bet_i);
         const double q = s.ep * E / p;
         return std::isfinite(q) ? q : 0.0;
     };
-    auto lat = [&](int g, double T){ return T >= G[g].t_0 ? G[g].lv : G[g].ls; };
+    auto lat = [&](int g, double T){
+        const double f = cnd(g, T);
+        if(f >= 0.0) return f * G[g].lv + (1.0 - f) * G[g].ls;
+        return T >= G[g].t_0 ? G[g].lv : G[g].ls; };
 
     // Equilibrium temperature of (h_L, q_t) at (p, z): cp T + g z - sum L(T) max(0, q_t - q_sat(T)) = h_L.
     // The left side rises monotonically with T (also across t_0, where ls > lv), so the root is
@@ -546,7 +583,9 @@ inline void MoistConvectiveAdjustment<Model>::run(){
                     const int x = q * ng + g;
                     ceq[x] = pc[g];
                     qv[x] = qt[x] - pc[g];
-                    if(TT >= G[g].t_0){ qc[x] = pc[g]; qi[x] = 0.0; } else { qi[x] = pc[g]; qc[x] = 0.0; }
+                    const double f_ = cnd(g, TT);           // <TAG>_MCA_PHASE=1: the adjustment's split
+                    if(f_ >= 0.0){ qc[x] = f_ * pc[g]; qi[x] = pc[g] - qc[x]; }
+                    else if(TT >= G[g].t_0){ qc[x] = pc[g]; qi[x] = 0.0; } else { qi[x] = pc[g]; qc[x] = 0.0; }
                 }
                 touched[q] = 1;
                 return true;

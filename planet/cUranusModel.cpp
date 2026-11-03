@@ -1251,13 +1251,13 @@ void cUranusModel::Run(){
             // H2S has no ice coefficient set here; its liquid set stands for both phases, as in the model's own adjustment.
             std::vector<Gas_> gases = {
                 { "H2O", &h2o, &h2o_cloud, &h2o_ice, ep_h2o, lv_h2o, ls_h2o, t_0_h2o,
-                  C_h2o, L0_h2o, R_h2o, del_alf_h2o, del_bet_h2o, C_h2o_ice, L0_h2o_ice, del_alf_h2o_ice, del_bet_h2o_ice },
+                  C_h2o, L0_h2o, R_h2o, del_alf_h2o, del_bet_h2o, C_h2o_ice, L0_h2o_ice, del_alf_h2o_ice, del_bet_h2o_ice, t_00_h2o },
                 { "NH3", &nh3, &nh3_cloud, &nh3_ice, ep_nh3, lv_nh3, ls_nh3, t_0_nh3,
-                  C_nh3, L0_nh3, R_nh3, del_alf_nh3, del_bet_nh3, C_nh3_ice, L0_nh3_ice, del_alf_nh3_ice, del_bet_nh3_ice },
+                  C_nh3, L0_nh3, R_nh3, del_alf_nh3, del_bet_nh3, C_nh3_ice, L0_nh3_ice, del_alf_nh3_ice, del_bet_nh3_ice, t_00_nh3 },
                 { "H2S", &h2s, &h2s_cloud, &h2s_ice, ep_h2s, lv_h2s, ls_h2s, t_0_h2s,
-                  C_h2s, L0_h2s, R_h2s, del_alf_h2s, del_bet_h2s, C_h2s, L0_h2s, del_alf_h2s, del_bet_h2s },
+                  C_h2s, L0_h2s, R_h2s, del_alf_h2s, del_bet_h2s, C_h2s, L0_h2s, del_alf_h2s, del_bet_h2s, t_00_h2s },
                 { "CH4", &ch4, &ch4_cloud, &ch4_ice, ep_ch4, lv_ch4, ls_ch4, t_0_ch4,
-                  C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, C_ch4_ice, L0_ch4_ice, del_alf_ch4_ice, del_bet_ch4_ice } };
+                  C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, C_ch4_ice, L0_ch4_ice, del_alf_ch4_ice, del_bet_ch4_ice, t_00_ch4 } };
             std::vector<Tr_> tracers = { { "NH4SH", &nh4sh, 0.0, true, 0.0 } };
             if(chrom_on()) tracers.push_back({ "chrom", &chrom, 0.0, false, 0.0 });   // ATURAN_CHROM: mixed as ATJUP mixes it
             MoistConvectiveAdjustmentUran(*this, gases, tracers).run();

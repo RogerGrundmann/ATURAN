@@ -521,6 +521,10 @@ public:
     // true on ATURAN (2026-10-28, user picked "(a)"): the MCA mixed the floor plane, bcRadius undid it, 100 % of columns
     // with 4.5-11 K per call; with it 0.007-0.014 K (satchk/mcagiants_2026-10-28 int.sh / utb). ATURAN_MCA_INTERIOR=0 restores.
     static bool mca_default_interior(){ return true; }
+    // <TAG>_MCA_PHASE default (shared ConvectiveAdjustment.h): 1 since 2026-11-03 (user: "yes, as you propose"; row
+    // GIANTS-CH4-PHASE): the MCA settles mixed cells with the saturation adjustment's temperature split instead
+    // of all ice below t_0, which had removed the liquid the adjustment made. =0 restores.
+    static bool mca_default_phase(){ return true; }
     // Defaults of ATURAN_SATADJ_NEWTON and ATURAN_SATADJ_CONSERVE (shared SaturationAdjustment.h): ON since
     // 2026-10-09. They act only when the shared routine is selected (ATURAN_SATADJ, this model's
     // default since 2026-10-10). Run for 16 iterations: without them the shared
