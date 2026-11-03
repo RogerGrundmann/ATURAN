@@ -162,6 +162,9 @@ void cUranusModel::paraview_panorama_vts(int n){
  * makes the planet blue (cold-trapped above the CH4 deck). Grid: (lat, lon) layout (x = 0.1 per latitude
  * row, y = 0.1 per longitude), the layers stacked in z at 0.1 each and FLIPPED -- layer i at
  * z = 0.1 (im-1-i), so layer 0 is the TOP face and a view from above shows the photo at once.
+  *
+ * SINCE 2026-11-03 THE DEFAULT GRID IS SPHERICAL (ATURAN_CLOUDVIEW_SPHERE=1): concentric shells, layer 0 outermost,
+ * pole rows left out; the flat (lat, lon) stack described above is ATURAN_CLOUDVIEW_SPHERE=0. See the note in the function.
  */
 void cUranusModel::paraview_cloudview(int n){
     const std::string name = output_path + "/Uranus_cloudview_" + std::to_string(n) + ".vtk";
@@ -173,17 +176,44 @@ void cUranusModel::paraview_cloudview(int n){
         std::cerr << "ERROR: could not open cloudview file " << __FILE__ << " at line " << __LINE__ << "\n";
         abort();
     }
-    const size_t npt = (size_t)im * jm * km;
+    static const bool cv_sphere = [](){ const char* e = getenv("ATURAN_CLOUDVIEW_SPHERE"); return e ? atoi(e) != 0 : true; }();
+    static const double cv_shell = [](){ const char* e = getenv("ATURAN_CLOUDVIEW_SHELL"); return e ? atof(e) : 0.05; }();
+    // Spherical: the pole rows j = 0 / jm-1 are LEFT OUT (rows 1..jm-2, 1..179 deg), as on the sphere .vts
+    // (GIANTS-SPHERE-VTS): at sin(the) = 0 every longitude collapses to one point and ParaView's contour
+    // filter stops with "Cannot compute gradient of grid". The arrays are still built on all rows (the
+    // PhotoRGB percentiles use |lat| <= 80 deg anyway); keep_() drops the pole rows on output.
+    const int j0_ = cv_sphere ? 1 : 0, j1_ = cv_sphere ? jm - 1 : jm;
+    auto keep_ = [&](size_t q){ const int j_ = (int)((q / km) % jm); return j_ >= j0_ && j_ < j1_; };
+    const size_t npt = (size_t)im * (j1_ - j0_) * km;
     f << "# vtk DataFile Version 3.0" << std::endl;
     f << "Cloudview_Data_Uran_Circulation\n";
     f << "ASCII" << std::endl;
     f << "DATASET STRUCTURED_GRID" << std::endl;
-    f << "DIMENSIONS " << km << " " << jm << " " << im << std::endl;
+    f << "DIMENSIONS " << km << " " << (j1_ - j0_) << " " << im << std::endl;
     f << "POINTS " << npt << " float" << std::endl;
-    for(int i = 0; i < im; i++)
-        for(int j = 0; j < jm; j++)
-            for(int k = 0; k < km; k++)
-                f << j * 0.1 << " " << k * 0.1 << " " << (im - 1 - i) * 0.1 << std::endl;   // layer 0 on top
+    // ATURAN_CLOUDVIEW_SPHERE (2026-11-03, DEFAULT 1; =0 restores the flat (lat, lon) sheets, x = 0.1 j, y = 0.1 k,
+    // z = 0.1 (im-1-i)): the layers as concentric SPHERICAL shells, r = 1 + ATURAN_CLOUDVIEW_SHELL (im-1-i)/(im-1)
+    // (default 0.05, a display exaggeration: the real deck is a few 1e-3 of the radius), colatitude the.z[j],
+    // longitude phi.z[k]. Layer 0 (the whole column, the photo) is the OUTERMOST shell, so the globe seen from
+    // outside is the photo; Extract Subset / Clip on the z index exposes the deeper layers. Apart from the two
+    // pole rows only the points move: point order, every array and PhotoRGB are unchanged. The pole rows j = 0 / jm-1
+    // would collapse to one point each ("Cannot compute gradient of grid", as on the old sphere .vts)
+    // and are left out, see keep_ above; the seam meridian k = km-1 duplicates k = 0 and closes the globe.
+    {
+        const std::streamsize prec_ = f.precision();
+        if(cv_sphere) f.precision(6);       // 4 decimals would merge shells 0.05 / (im-1) apart
+        for(int i = 0; i < im; i++)
+            for(int j = j0_; j < j1_; j++)
+                for(int k = 0; k < km; k++){
+                    if(cv_sphere){
+                        const double r = 1.0 + cv_shell * (double)(im - 1 - i) / (double)(im - 1);
+                        f << r * sin(the.z[j]) * cos(phi.z[k]) << " " << r * sin(the.z[j]) * sin(phi.z[k])
+                          << " " << r * cos(the.z[j]) << std::endl;
+                    }else
+                        f << j * 0.1 << " " << k * 0.1 << " " << (im - 1 - i) * 0.1 << std::endl;   // layer 0 on top
+                }
+        f.precision(prec_);
+    }
     f << "POINT_DATA " << npt << std::endl;
     auto above = [&](const char* desc, Array& a, double unit = 1.0e3){
         std::vector<double> c((size_t)im * jm * km, 0.0);          // c[i][j][k], layer im-1 stays 0
@@ -196,7 +226,7 @@ void cUranusModel::paraview_cloudview(int n){
         }
         f << "SCALARS " << desc << " float " << 1 << std::endl;
         f << "LOOKUP_TABLE default" << std::endl;
-        for(size_t q = 0; q < c.size(); q++) f << c[q] << std::endl;
+        for(size_t q = 0; q < c.size(); q++) if(keep_(q)) f << c[q] << std::endl;
         return c;
     };
     const std::vector<double> c_ch4i = above("CH4Ice_above_gm2", ch4_ice);
@@ -229,6 +259,7 @@ void cUranusModel::paraview_cloudview(int n){
         const auto r_ch4i = range(c_ch4i), r_h2si = range(c_h2si);
         f << "COLOR_SCALARS PhotoRGB 3" << std::endl;
         for(size_t q = 0; q < c_ch4i.size(); q++){
+            if(!keep_(q)) continue;
             const double b = unit01(c_ch4i[q], r_ch4i);
             const double h = unit01(c_h2si[q], r_h2si) * (1.0 - b);
             const double base[3] = { 0.62, 0.85, 0.88 }, grey[3] = { 0.82, 0.84, 0.84 };
