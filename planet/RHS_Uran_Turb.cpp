@@ -212,10 +212,20 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // 8b284cb deliberately kept them apart so each could be measured on its own.
     static const bool cor_phi_legacy = [](){
         const char* e = getenv("ATURAN_CORIOLIS_PHI_LEGACY"); return e && atoi(e) != 0; }();
-    double Coriolis_rad  = -2.0 * omega * sinthe * w_ijk;
+    // ATURAN_CORIOLIS_TRUE_SINE (2026-11-03, ATJUP-register row GIANTS-CORIOLIS-SINE; default 0 = unchanged):
+    // the body forces read the TRUE sin(colatitude), reconstructed from costhe as ATJUP 7782207 and
+    // ATSAT do, instead of geo.sinthe = max(SINTHE_FLOOR 0.4, |sin|), a guard of the difference
+    // scheme's 1/sin^2 divisions. With the floor, poleward of 66.4 deg latitude Coriolis_rad, the
+    // sin*u half of Coriolis_phi and the centrifugal sine read 0.4 instead of sin -- up to ~11x at
+    // the innermost row (sin 2 deg = 0.035). The radial Coriolis term in p_hydro
+    // (RungeKutta, CORIOLIS_SPLIT) already uses the true sine.
+    static const bool cor_true_sine = [](){
+        const char* e = getenv("ATURAN_CORIOLIS_TRUE_SINE"); return e && atoi(e) != 0; }();
+    const double sinthe_bf = cor_true_sine ? sqrt(std::max(0.0, 1.0 - costhe * costhe)) : sinthe;
+    double Coriolis_rad  = -2.0 * omega * sinthe_bf * w_ijk;
     double Coriolis_the  = (cor_legacy ? +2.0 : -2.0) * omega * costhe * w_ijk;
     double Coriolis_phi  = +2.0 * omega * ((cor_legacy ? -1.0 : +1.0) * costhe * v_ijk
-                                           + sinthe * u_ijk);
+                                           + sinthe_bf * u_ijk);
 
     // ===== THE CENTRIFUGAL FORCE POINTS AWAY FROM THE ROTATION AXIS =====
     //
@@ -263,8 +273,8 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
         centrifugal_rad = omega * omega * rm;
         centrifugal_the = omega * omega * rm * fabs(sinthe);
     } else {
-        centrifugal_rad = omega * omega * rm * sinthe * sinthe;
-        centrifugal_the = omega * omega * rm * sinthe * costhe;
+        centrifugal_rad = omega * omega * rm * sinthe_bf * sinthe_bf;   // ATURAN_CORIOLIS_TRUE_SINE: true sine
+        centrifugal_the = omega * omega * rm * sinthe_bf * costhe;
     }
 
     double coeff_energy_p = u_0 * u_0 / (cp_mix * t_ref);
