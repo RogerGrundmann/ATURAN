@@ -489,6 +489,8 @@ void cUranusModel::Run(){
     AtomUtils::damp_wiggles(v, nullptr, true, true, true);
     AtomUtils::damp_wiggles(w, nullptr, true, true, true);
 
+    if(VelocityInitializerUran::cell_init()) VelocityInitializerUran(*this).cellStreamfunction();   // ATURAN_CELL_INIT (default 0): divergence-free initial cells, as ATSAT
+
 //    goto Printout;
 
     if(svp_fit()) setSvpFit();                       // ATURAN_SVP_FIT, before any SVP is evaluated
