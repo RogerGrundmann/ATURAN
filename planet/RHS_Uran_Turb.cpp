@@ -212,7 +212,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // 8b284cb deliberately kept them apart so each could be measured on its own.
     static const bool cor_phi_legacy = [](){
         const char* e = getenv("ATURAN_CORIOLIS_PHI_LEGACY"); return e && atoi(e) != 0; }();
-    // ATURAN_CORIOLIS_TRUE_SINE (2026-11-03, ATJUP-register row GIANTS-CORIOLIS-SINE; default 0 = unchanged):
+    // ATURAN_CORIOLIS_TRUE_SINE (2026-11-03, ATJUP-register row GIANTS-CORIOLIS-SINE; DEFAULT 1 since 2026-11-04, =0 = the floored sine):
     // the body forces read the TRUE sin(colatitude), reconstructed from costhe as ATJUP 7782207 and
     // ATSAT do, instead of geo.sinthe = max(SINTHE_FLOOR 0.4, |sin|), a guard of the difference
     // scheme's 1/sin^2 divisions. With the floor, poleward of 66.4 deg latitude Coriolis_rad, the
@@ -220,7 +220,7 @@ void cUranusModel::RHSUran(int i, int j, int k, const CellGeometry& geo){
     // the innermost row (sin 2 deg = 0.035). The radial Coriolis term in p_hydro
     // (RungeKutta, CORIOLIS_SPLIT) already uses the true sine.
     static const bool cor_true_sine = [](){
-        const char* e = getenv("ATURAN_CORIOLIS_TRUE_SINE"); return e && atoi(e) != 0; }();
+        const char* e = getenv("ATURAN_CORIOLIS_TRUE_SINE"); return e ? atoi(e) != 0 : true; }();   // DEFAULT 1 since 2026-11-04 (user: "flip the ice giant defaults"; =0 restores)
     const double sinthe_bf = cor_true_sine ? sqrt(std::max(0.0, 1.0 - costhe * costhe)) : sinthe;
     double Coriolis_rad  = -2.0 * omega * sinthe_bf * w_ijk;
     double Coriolis_the  = (cor_legacy ? +2.0 : -2.0) * omega * costhe * w_ijk;

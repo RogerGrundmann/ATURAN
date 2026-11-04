@@ -617,7 +617,10 @@ public:
     static double sinthe_min(){
         static const double v = [](){
             const char* e = getenv("ATURAN_SINTHE_MIN");
-            const double x = e ? atof(e) : 0.4;
+            // DEFAULT 0.0 since 2026-11-04 (true sine as ATSAT; user: "use the true sine like ATSAT for
+            // Uranus and Neptune too", "flip the ice giant defaults"; =0.4 restores; satchk UT0 in
+            // ATNEPT/satchk/cellinit_2026-11-04: 200 it stable, extrema as the floored run).
+            const double x = e ? atof(e) : 0.0;
             return (x >= 0.0 && x < 1.0) ? x : 0.4;
         }();
         return v;
