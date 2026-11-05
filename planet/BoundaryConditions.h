@@ -49,6 +49,10 @@
  *                               <TAG>_BC_PHI_PERIODIC, see ATPhys.h: 1 makes the seam meridian an
  *                               ordinary integrated cell and bcPhi a copy of k=0 onto k=km-1.
  *
+ *   Planet::bc_default_bottom_form()
+ *                               <TAG>_BC_BOTTOM_FORM: the bottom plane's own form, 0 = the radial
+ *                               form on both planes (ATSAT 3, the other three 0).
+ *
  *   Planet::bc_default_*()      Each knob's default. ATJUP ships rigid_lid and top_taper ON, on
  *                               Jupiter evidence; ATSAT ships everything OFF, because on Saturn
  *                               none of it is measured yet.
@@ -121,6 +125,14 @@ private:
         static const int v = knob("BC_POLE_COPY", Planet::bc_default_pole_copy()); return v; }
     static int radius_copy(){
         static const int v = knob("BC_RADIUS_COPY", Planet::bc_default_radius_copy()); return v; }
+    // <TAG>_BC_BOTTOM_FORM (2026-11-05, moved here from ATSAT's BC_Sat.cpp, ATSAT ec6c426; row
+    // SAT-LID-CUBIC): the form on the BOTTOM plane i = 0 only. 0 = off, the bottom takes the
+    // radial form above like the lid; 1 / 2 / 3 = COPY / NEUMANN / CUBIC there (the BCForm
+    // encoding), u excepted (see bcRadius). ATSAT ships 3 (Neumann lid, cubic bottom: Neumann
+    // cooled Saturn's bottom plane ~31 K in 1000 iterations); ATJUP / ATNEPT / ATURAN ship 0,
+    // byte-identical to before.
+    static int bottom_form(){
+        static const int v = knob("BC_BOTTOM_FORM", Planet::bc_default_bottom_form()); return v; }
     static int pole_fill(){
         static const int v = knob("BC_POLE_FILL", 1); return v; }
     static int seam_damp(){
@@ -144,6 +156,7 @@ void BoundaryConditions<Planet>::bcRadius()
     const int mg   = Planet::bc_margin();
     const int fdef = Planet::bc_default_form();
     const int form = radius_copy();
+    const int bform = bottom_form();
 
     std::vector<Array*> fields = m.bc_fields_radius();
     const int nf = (int)fields.size();
@@ -177,7 +190,11 @@ void BoundaryConditions<Planet>::bcRadius()
         for(int k = k_lo; k < km-mg; k++){
             for(int f = 0; f < nf; f++){
                 Array& F = *fields[f];
-                F.x[0][j][k] = BCForm::apply(form, fdef,
+                // u keeps the radial form on the bottom: with the rigid wall (BC_LID_U, below) its
+                // value there is the wall's zero anyway, and without it the bottom-form knob was
+                // never meant for the wall-normal velocity (as in ATSAT ec6c426).
+                const int fb = (bform != 0 && &F != &m.u) ? bform : form;
+                F.x[0][j][k] = BCForm::apply(fb, fdef,
                     F.x[1][j][k], F.x[2][j][k], F.x[3][j][k], c43, c13);
                 F.x[im-1][j][k] = BCForm::apply(form, fdef,
                     F.x[im-2][j][k], F.x[im-3][j][k], F.x[im-4][j][k], c43, c13);

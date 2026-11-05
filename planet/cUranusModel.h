@@ -366,6 +366,9 @@ public:
     static int bc_default_top_taper(){ return 0; }
     static int bc_default_pole_copy(){ return 0; }
     static int bc_default_radius_copy(){ return 0; }
+    // ATURAN_BC_BOTTOM_FORM (shared BoundaryConditions.h, 2026-11-05): 0 = the bottom plane i = 0 takes
+    // the radial form above, as before. 1 / 2 / 3 = copy / Neumann / cubic there (ATSAT ships 3).
+    static int bc_default_bottom_form(){ return 0; }
     static int bc_default_phi_periodic(){ return 1; }   // ATURAN_BC_PHI_PERIODIC, see ATPhys.h; 1 since 2026-10-13 on the user's word, 0 restores
     static int bc_pole_open_rows(){ return 0; }   // rows next to each pole that RungeKutta does not integrate (<TAG>_BC_POLE_FILL)
 
