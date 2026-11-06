@@ -88,6 +88,15 @@
 
 class Array;
 
+// <TAG>_TURB_BUOY=3 (moist N^2, see compute_sources): the condensable gases of a model, one per n = 0, 1, ...
+// until it returns false. A model that defines no overload of its own gets this one, has no gases, and its
+// =3 reduces to the dry =1. A model's overload is a NON-template function of its own class, declared before
+// Turbulence<Model> is instantiated (its Turbulence<Tag>.h binding), which argument-dependent lookup then
+// prefers. Plain types only, so the model header needs nothing from this one. v / c / ice: vapour, liquid,
+// ice as densities [kg/m3]; ep = mu_gas / mu_air; lv / ls [J/kg]; t_0 [K]: liquid above, ice below.
+template<class M>
+inline bool turb_moist_gas(M&, int, Array*&, Array*&, Array*&, double&, double&, double&, double&){ return false; }
+
 template<class Planet>
 class Turbulence {
 public:
@@ -800,6 +809,57 @@ inline void Turbulence<Planet>::compute_sources(){
                     compute_k_omega_SST(i, j, k, y_mount, rm, sinthe,
                         dtkedr, ddisdr, dtkedthe, ddisdthe, dtkedphi, ddisdphi,
                         Omega, Omega);
+                }
+
+                // <TAG>_TURB_BUOY (2026-11-06, ATSAT row SAT-LID-CUBIC; DEFAULT 0 = the head byte for byte):
+                // buoyancy term of the k equation, B = -nu_t N^2 / Pr_t, which none of the three models had --
+                // the closure was shear-only, so a stably stratified layer kept whatever k the shear made and
+                // diffused heat with it (ATSAT PL 3001..3100: nue*/Pr_t +0.5..+0.7 K / 100 it at the top five
+                // levels, the coupling-off arm ~0). N^2 is the DRY value (g/T)(dT/dz + g/cp) from the model's
+                // own t, cp_mix and g (as the shared MCA reads them), centred in r; moisture and composition
+                // gradients are not in it. 1 = only the stable sink (N^2 > 0); 2 = also N^2 < 0 as production.
+                // The omega (dis) equation is left as it is (C3 = 0, the usual choice for stable layers): a
+                // smaller k gives a smaller nu_t = k/omega through the model's own formula on the next call.
+                // Dimensionless like the rest: B* = -nue* N*^2 / Pr_t with N* = N L/u_0.
+                // =3 (2026-11-06, after =1 measured): =1 with the MOIST N^2 in saturated cells. The dry N^2 is > 0
+                // in a moist-adiabatic troposphere too (ATSAT B1L 3000 -> 3500: k fell to the k_bg floor EVERYWHERE,
+                // =1 ended as TURB_COUPLING 0). A cell counts as saturated for a gas when it holds that gas's
+                // condensate (mass fraction > 1e-9; the saturation adjustment leaves such cells at saturation), and
+                // then (Durran & Klemp 1982, eq. 36 without the condensate-loading gradient; sums over the
+                // saturated gases, q_v the vapour mass fraction, L = lv above t_0 and ls below, R_d = R_mix):
+                //   A = sum L q_v / (R_d T),  B = sum ep L^2 q_v / (cp R_d T^2),  Gamma_m = (g/cp)(1 + A)/(1 + B)
+                //   N_m^2 = (g/T)(dT/dz + Gamma_m)(1 + A)
+                // so a segment the MCA left moist-neutral has N_m^2 ~ 0 and keeps its k. No saturated gas -> dry.
+                // The gases come from turb_moist_gas() (above the class); a model without an overload is dry.
+                {
+                    static const int buoy = [](){
+                        const char* e = ATPhys::env_for(Planet::planet_tag(), "TURB_BUOY"); return e ? atoi(e) : 0; }();
+                    if(buoy != 0){
+                        constexpr double Pr_t = 0.9;     // = the scalar eddy Prandtl number of the RHS
+                        const double T  = m.t.x[i][j][k] * m.t_ref;
+                        const double dz = height_m(i+1) - height_m(i-1);
+                        const double dTdz = (m.t.x[i+1][j][k] - m.t.x[i-1][j][k]) * m.t_ref / dz;
+                        double Gam = m.g / m.cp_mix, fac = 1.0;
+                        if(buoy == 3 && T > 0.0){
+                            const double rho = m.rho_at(i, j, k);
+                            double A = 0.0, B = 0.0;
+                            Array *gv, *gc, *gi; double ep, lv, ls, t0;
+                            for(int n = 0; rho > 0.0 && turb_moist_gas(m, n, gv, gc, gi, ep, lv, ls, t0); n++){
+                                const double qc = (std::max(0.0, gc->x[i][j][k]) + std::max(0.0, gi->x[i][j][k])) / rho;
+                                if(!(qc > 1.0e-9)) continue;
+                                const double qv = std::max(0.0, gv->x[i][j][k]) / rho;
+                                const double L  = T >= t0 ? lv : ls;
+                                A += L * qv / (m.R_mix * T);
+                                B += ep * L * L * qv / (m.cp_mix * m.R_mix * T * T);
+                            }
+                            if(std::isfinite(A + B)){ Gam *= (1.0 + A) / (1.0 + B); fac = 1.0 + A; }
+                        }
+                        const double N2 = (T > 0.0 && dz > 0.0) ? m.g / T * (dTdz + Gam) * fac : 0.0;
+                        if(std::isfinite(N2) && (N2 > 0.0 || buoy == 2)){
+                            const double tL = L_atm_m() / m.u_0;
+                            m.tke_source.x[i][j][k] -= std::max(0.0, m.nue.x[i][j][k]) * N2 * tL * tL / Pr_t;
+                        }
+                    }
                 }
 
                 // The floor and the caps (TURB_CLAMP_PASS 1: done for every cell after this loop).
