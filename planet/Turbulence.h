@@ -811,7 +811,8 @@ inline void Turbulence<Planet>::compute_sources(){
                         Omega, Omega);
                 }
 
-                // <TAG>_TURB_BUOY (2026-11-06, ATSAT row SAT-LID-CUBIC; DEFAULT 0 = the head byte for byte):
+                // <TAG>_TURB_BUOY (2026-11-06, ATSAT row SAT-LID-CUBIC; default Planet::turb_default_buoy(): 3 on ATSAT since
+                // 2026-11-06 (user: "=3 moist"), 0 on ATJUP / ATNEPT / ATURAN; 0 = no buoyancy term, the closure of before):
                 // buoyancy term of the k equation, B = -nu_t N^2 / Pr_t, which none of the three models had --
                 // the closure was shear-only, so a stably stratified layer kept whatever k the shear made and
                 // diffused heat with it (ATSAT PL 3001..3100: nue*/Pr_t +0.5..+0.7 K / 100 it at the top five
@@ -833,7 +834,7 @@ inline void Turbulence<Planet>::compute_sources(){
                 // The gases come from turb_moist_gas() (above the class); a model without an overload is dry.
                 {
                     static const int buoy = [](){
-                        const char* e = ATPhys::env_for(Planet::planet_tag(), "TURB_BUOY"); return e ? atoi(e) : 0; }();
+                        const char* e = ATPhys::env_for(Planet::planet_tag(), "TURB_BUOY"); return e ? atoi(e) : Planet::turb_default_buoy(); }();
                     if(buoy != 0){
                         constexpr double Pr_t = 0.9;     // = the scalar eddy Prandtl number of the RHS
                         const double T  = m.t.x[i][j][k] * m.t_ref;
