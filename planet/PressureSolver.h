@@ -46,6 +46,26 @@
  * Raising the count is the honest way to ask whether a pressure response is merely unconverged;
  * cost is linear in it.
  *
+ * ===== <TAG>_PRESS_BAROTROPIC: THE COLUMN-MEAN MODE, SOLVED EXACTLY (default 0) =====
+ *
+ * On a thin shell the radial weight swamps the horizontal ones (ATSAT: num1 = 1/dr^2 = 1600
+ * against num2 = 1/(rm^2 dtheta^2) = 0.24, a theta neighbour carries 1.5e-4 of a pointwise
+ * update), so a pole-to-pole pattern of p_dyn needs ~2e8 sweeps and the COLUMN-MEAN
+ * (barotropic) part of p_dyn keeps its initial horizontal shape for ever (row SAT-SPINUP-DRIFT,
+ * 2026-11-07: the frozen meridional gradient of initGeoBalance drives the meridional cells).
+ * PRESS_LINE does not reach it either: it solves r exactly and leaves the horizontal lagged.
+ * With 1, every sweep ends with a correction q(theta, phi), the same at every level, chosen so
+ * that the residual src - Lc(p) summed over each column vanishes. A column-uniform q leaves
+ * the radial part of Lc alone (the 2-point Neumann ends carry a shift unchanged: c43 - c13 = 1),
+ * so the summed equation is a 2-D one, A2 * L2(q) = R with A2 = sum_i 1/rm_i^2 and L2 the
+ * horizontal part of the same compact stencil; it is solved exactly by a DFT in phi and a
+ * tridiagonal solve in theta per mode, with the theta ends folded as the boundary pass sets
+ * them (p0 = c43 p1 - c13 p2). Mode 0 is singular (all-Neumann): its source is made
+ * consistent (its left null vector is (3/2, 1, .., 1, 3/2)) by removing a sin(theta)-shaped
+ * part, the mean is pinned, and q is returned with zero sin-weighted mean. Needs the periodic
+ * phi ring (BC_PHI_PERIODIC 1) and no solid body (PRESS_WALL 0); otherwise it says so and is
+ * skipped. 0 = no correction, byte-identical.
+ *
  * ===== THE RELAXATION IS RED-BLACK, AND WAS NOT ALWAYS =====
  *
  * Each sweep is two passes over a checkerboard colouring of (i+j+k): every cell of one colour has
@@ -278,8 +298,15 @@ void PressureSolver<Planet>::run(){
     // shift, invisible to every gradient). Obstacle faces stay dp/dn = 0 exactly as in the pointwise
     // wall branch; a run of fluid cells between solid cells is its own tridiagonal system.
     const bool press_line = ATPhys::env_int(TAG, "PRESS_LINE", 0) != 0;
+    // <TAG>_PRESS_BAROTROPIC (see the header): the column-mean mode solved exactly after every sweep.
+    const int  press_baro_raw = ATPhys::env_int(TAG, "PRESS_BAROTROPIC", 0);
+    const bool press_baro = press_baro_raw != 0 && phi_per && !press_wall;
+    static bool baro_warned = false;                // say it once, not every call
+    if(press_baro_raw != 0 && !press_baro && !baro_warned && (baro_warned = true))
+        printf("      %s: PressureSolver: %s_PRESS_BAROTROPIC needs %s_BC_PHI_PERIODIC 1 and no solid body, skipped\n", TAG, TAG, TAG);
     std::vector<double> line_rhs;                   // the source of every cell, cached by the pointwise pass
-    if(press_line) line_rhs.assign((size_t)m.im * m.jm * m.km, 0.0);
+    if(press_line || press_baro) line_rhs.assign((size_t)m.im * m.jm * m.km, 0.0);
+    double baro_qmax = 0.0, baro_r0 = 0.0, baro_r1 = 0.0;   // PRESS_BAROTROPIC report, last sweep
     auto interior_mean = [&]()->double{
         double s = 0.0; long n = 0;
         #pragma omp parallel for collapse(2) reduction(+:s, n) schedule(static)
@@ -459,7 +486,7 @@ void PressureSolver<Planet>::run(){
                     else if (div_src >  src_max)      div_src =  src_max;
                     else if (div_src < -src_max)      div_src = -src_max;
                     if(press_incr) div_src += lc_old[((size_t)i * m.jm + j) * m.km + k];
-                    if(press_line) line_rhs[((size_t)i * m.jm + j) * m.km + k] = div_src;
+                    if(press_line || press_baro) line_rhs[((size_t)i * m.jm + j) * m.km + k] = div_src;
 
                     m.p_dyn.x[i][j][k] = (acc - div_src) / den;
                 } // k
@@ -542,6 +569,144 @@ void PressureSolver<Planet>::run(){
         } // colour
       }
 
+      // ---- <TAG>_PRESS_BAROTROPIC: the column-mean correction (see the header) ----
+      if(press_baro){
+        const int N  = m.km - 1;                    // the distinct meridians k = 0..km-2 (phi_per)
+        const int J  = m.jm - 2;                    // the rows j = 1..jm-2
+        const int NM = N / 2;                       // modes 0..NM
+        // R(j, k) = sum over the column of (src - Lc(p)), the plain six-face stencil, with the end rows
+        // (i = 0, im-1; j = 0, jm-1) read as the boundary pass below will set them from the interior.
+        double A2 = 0.0;
+        for(int i = 1; i < m.im-1; i++){ const double rm = m.metricRadius(m.rad.z[i]); A2 += 1.0 / (rm * rm); }
+        auto col_resid = [&](int j, int k)->double{
+            const int kw = ATPhys::phi_wrap(true, k-1, m.km);
+            const int ke = ATPhys::phi_wrap(true, k+1, m.km);
+            double s = 0.0;
+            for(int i = 1; i < m.im-1; i++){
+                const double rm   = m.metricRadius(m.rad.z[i]);
+                const double erm  = m.coord_stretching ? 1.0 / (rm + 1.0) : 1.0;
+                const double num1 = erm * erm * inv_dr2;
+                const double num2 = inv_dthe2 / (rm * rm);
+                const double num3 = inv_dphi2 / (rm * rm * sinthe_table[j] * sinthe_table[j]);
+                auto pj = [&](int jn)->double{
+                    if(jn == 0)      return m.c43 * m.p_dyn.x[i][1][k] - m.c13 * m.p_dyn.x[i][2][k];
+                    if(jn == m.jm-1) return m.c43 * m.p_dyn.x[i][m.jm-2][k] - m.c13 * m.p_dyn.x[i][m.jm-3][k];
+                    return m.p_dyn.x[i][jn][k]; };
+                auto pi_ = [&](int in)->double{
+                    if(in == 0)      return m.c43 * m.p_dyn.x[1][j][k] - m.c13 * m.p_dyn.x[2][j][k];
+                    if(in == m.im-1) return m.c43 * m.p_dyn.x[m.im-2][j][k] - m.c13 * m.p_dyn.x[m.im-3][j][k];
+                    return m.p_dyn.x[in][j][k]; };
+                const double p0 = m.p_dyn.x[i][j][k];
+                const double lc = num1 * (pi_(i+1) + pi_(i-1) - 2.0 * p0)
+                                + num2 * (pj(j+1) + pj(j-1) - 2.0 * p0)
+                                + num3 * (m.p_dyn.x[i][j][ke] + m.p_dyn.x[i][j][kw] - 2.0 * p0);
+                s += line_rhs[((size_t)i * m.jm + j) * m.km + k] - lc;
+            }
+            return s / A2; };
+        std::vector<double> R((size_t)J * N, 0.0);
+        #pragma omp parallel for schedule(static)
+        for(int j = 1; j < m.jm-1; j++)
+            for(int k = 0; k < N; k++) R[(size_t)(j-1) * N + k] = col_resid(j, k);
+        double r0 = 0.0;
+        for(double x : R) r0 = std::max(r0, std::abs(x));
+
+        // DFT in phi: Ac[m][j] = sum_k R cos(2 pi m k / N), As[m][j] = sum_k R sin(...).
+        std::vector<double> ct((size_t)(NM+1) * N), st((size_t)(NM+1) * N);
+        for(int mm = 0; mm <= NM; mm++) for(int k = 0; k < N; k++){
+            const double a = 2.0 * M_PI * (double)((long)mm * k % N) / N;
+            ct[(size_t)mm * N + k] = cos(a); st[(size_t)mm * N + k] = sin(a); }
+        std::vector<double> Ac((size_t)(NM+1) * J, 0.0), As((size_t)(NM+1) * J, 0.0);
+        #pragma omp parallel for collapse(2) schedule(static)
+        for(int mm = 0; mm <= NM; mm++) for(int jj = 0; jj < J; jj++){
+            double sc = 0.0, ss = 0.0;
+            const double* r_ = &R[(size_t)jj * N];
+            for(int k = 0; k < N; k++){ sc += r_[k] * ct[(size_t)mm * N + k]; ss += r_[k] * st[(size_t)mm * N + k]; }
+            // A zonally symmetric R gives modes m > 0 of round-off size (sum of the cosines); keeping
+            // them would give q a round-off dependence on k and break the exact zonal symmetry the
+            // model otherwise keeps (row SAT-U-ODDEVEN). Dropped below 1e-12 of the row's sum |R|.
+            if(mm > 0){
+                double ra = 0.0;
+                for(int k = 0; k < N; k++) ra += std::abs(r_[k]);
+                const double tol = 1.0e-12 * ra;
+                if(std::abs(sc) < tol) sc = 0.0;
+                if(std::abs(ss) < tol) ss = 0.0;
+            }
+            Ac[(size_t)mm * J + jj] = sc; As[(size_t)mm * J + jj] = ss;
+        }
+
+        // Per mode, rows j = 1..jm-2:  (q[j+1] - 2 q[j] + q[j-1]) / dthe^2 - lam_m / sin_j^2 q[j] = rhs[j],
+        // lam_m = 4 sin^2(pi m / N) / dphi^2, the ends folded with q0 = c43 q1 - c13 q2.
+        const double e = inv_dthe2;
+        #pragma omp parallel
+        {
+          std::vector<double> a(J), b(J), c(J), cp(J), dp(J);
+          #pragma omp for schedule(static)
+          for(int mm = 0; mm <= NM; mm++){
+            const double sl = sin(M_PI * mm / N);
+            const double lam = 4.0 * sl * sl * inv_dphi2;
+            for(int jj = 0; jj < J; jj++){
+                const double s_ = sinthe_table[jj + 1];
+                a[jj] = e; c[jj] = e; b[jj] = -2.0 * e - lam / (s_ * s_);
+            }
+            a[0] = 0.0;     b[0]     += m.c43 * e; c[0]     -= m.c13 * e;
+            c[J-1] = 0.0;   b[J-1]   += m.c43 * e; a[J-1]   -= m.c13 * e;
+            for(int part = 0; part < 2; part++){
+                if(mm == 0 && part == 1) continue;                     // sin of mode 0 is zero
+                if(2 * mm == N && part == 1) continue;                 // and of the Nyquist mode
+                double* d = (part == 0 ? &Ac[(size_t)mm * J] : &As[(size_t)mm * J]);
+                double b0 = b[0], c0 = c[0];
+                if(mm == 0){
+                    // consistency: remove the part of the source the all-Neumann operator cannot reach
+                    double yr = 0.0, ys = 0.0;
+                    for(int jj = 0; jj < J; jj++){
+                        const double y = (jj == 0 || jj == J-1) ? 1.5 : 1.0;
+                        const double s_ = std::abs(sin(m.the.z[jj + 1]));
+                        yr += y * d[jj]; ys += y * s_; }
+                    for(int jj = 0; jj < J; jj++) d[jj] -= yr / ys * std::abs(sin(m.the.z[jj + 1]));
+                    b0 = 1.0; c0 = 0.0; d[0] = 0.0;                    // pin q at j = 1
+                }
+                cp[0] = c0 / b0; dp[0] = d[0] / b0;
+                for(int jj = 1; jj < J; jj++){
+                    const double dn = b[jj] - a[jj] * cp[jj-1];
+                    cp[jj] = c[jj] / dn; dp[jj] = (d[jj] - a[jj] * dp[jj-1]) / dn;
+                }
+                d[J-1] = dp[J-1];
+                for(int jj = J-2; jj >= 0; jj--) d[jj] = dp[jj] - cp[jj] * d[jj+1];
+                if(mm == 0){                                          // zero sin-weighted mean
+                    double sq = 0.0, sw = 0.0;
+                    for(int jj = 0; jj < J; jj++){ const double s_ = std::abs(sin(m.the.z[jj + 1])); sq += s_ * d[jj]; sw += s_; }
+                    for(int jj = 0; jj < J; jj++) d[jj] -= sq / sw;
+                }
+            }
+          }
+        }
+
+        // Back to phi and onto every level of the column (i = 0..im-1; the theta end rows and the
+        // seam copy are written by the boundary pass below).
+        double qmax = 0.0;
+        #pragma omp parallel for schedule(static) reduction(max:qmax)
+        for(int jj = 0; jj < J; jj++){
+            for(int k = 0; k < N; k++){
+                double q = 0.0;
+                for(int mm = 0; mm <= NM; mm++){
+                    const double w_ = (mm == 0 || 2 * mm == N) ? 1.0 : 2.0;
+                    q += w_ * (Ac[(size_t)mm * J + jj] * ct[(size_t)mm * N + k]
+                             + ((mm == 0 || 2 * mm == N) ? 0.0 : As[(size_t)mm * J + jj] * st[(size_t)mm * N + k]));
+                }
+                q /= N;
+                qmax = std::max(qmax, std::abs(q));
+                for(int i = 0; i < m.im; i++) m.p_dyn.x[i][jj + 1][k] += q;
+            }
+        }
+
+        // The column residual after the correction, for the report.
+        double r1 = 0.0;
+        #pragma omp parallel for schedule(static) reduction(max:r1)
+        for(int j = 1; j < m.jm-1; j++)
+            for(int k = 0; k < N; k++) r1 = std::max(r1, std::abs(col_resid(j, k)));
+        baro_qmax = qmax; baro_r0 = r0; baro_r1 = r1;
+      }
+
         // ---- Outer boundary condition of the relaxation ----
         // 2-point Neumann, not the 3-point cubic: the cubic amplifies an alternating error 7x per
         // call, and p_dyn is not touched by either model's boundary-condition pass, so whatever
@@ -591,6 +756,9 @@ void PressureSolver<Planet>::run(){
 
     } // sweep
 
+    if(press_baro)
+        printf("      %s: PressureSolver: PRESS_BAROTROPIC column residual max %.6e -> %.6e (the mode-0 part it cannot reach stays), correction max %.6e\n",
+               TAG, baro_r0, baro_r1, baro_qmax);
     auto end     = std::chrono::high_resolution_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin);
     printf(" time measured: %.3f seconds for PressureSolver\n", elapsed.count() * 1e-9);
