@@ -53,6 +53,7 @@
 #include "ATPhys.h"
 
 #include <cmath>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -338,6 +339,17 @@ inline void ConvectiveAdjustment<Model>::run(){
  *   <TAG>_MCA_LOADING  1  condensate weight in the density test (only with LEDOUX)
  *   <TAG>_MCA_RELAX    1  fraction of the adjustment applied per call, on the conserved variables
  *   <TAG>_MCA_PASSES  64  sweep cap per column
+ *   <TAG>_MCA_SMOOTH   0  (2026-11-09, ATSAT row SAT-SPINUP-DRIFT) n > 0: the stability test runs on a column
+ *                         smoothed in latitude -- h_L, q_t and the tracers of the state at the call, n passes of
+ *                         a 1-2-1 filter over the rows j-1, j, j+1 (same i, k; solid and missing neighbours give
+ *                         their weight to the centre) --, the whole search (census, sweeps, extension) runs on
+ *                         that column, and the union of the segments it mixed is then mixed in the column's OWN
+ *                         state (overlapping segments merged, so a later sweep that re-mixed part of an earlier
+ *                         segment mixes the whole union: slightly more than the smoothed search did). Conserves
+ *                         h_L and q_t per column as before. Why: the test is a threshold, and on a 1-deg grid
+ *                         neighbouring rows near marginal stability fire one at a time -- ATSAT mixed single
+ *                         rows from ~i20 to the lid, 12 K cold rows under the lid (satchk/mcatop_2026-11-08),
+ *                         with ATSAT_MCA=0 none (mcaoff_2026-11-09). 0 = the column's own state, as before.
  * The report line counts the pairs that are unstable in temperature but held by their composition
  * ("held by composition") -- the number that says what the Ledoux term is worth.
  */
@@ -393,6 +405,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     static const bool   ledoux   = ATPhys::env_int(TAG, "MCA_LEDOUX", 1) != 0;
     static const bool   loading  = ATPhys::env_int(TAG, "MCA_LOADING", 1) != 0;
     static const double relax    = std::min(1.0, std::max(0.0, ATPhys::env_double(TAG, "MCA_RELAX", 1.0)));
+    static const int    smooth   = std::max(0, ATPhys::env_int(TAG, "MCA_SMOOTH", 0));
     static const int    max_pass = [TAG](){ const int v = ATPhys::env_int(TAG, "MCA_PASSES", 64); return v > 0 ? v : 64; }();
     // <TAG>_MCA_PHASE (see the note at the top): 1 = the saturation adjustment's temperature split when its BERGERON is 0.
     static const bool   phase_split = [TAG](){
@@ -471,6 +484,59 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     static bool dbg_done = false;
     if(const char* e = ATPhys::env_for(TAG, "MCA_DEBUG")){ if(dbg_j < 0) sscanf(e, "%d,%d", &dbg_j, &dbg_k); }
 
+    // <TAG>_MCA_SMOOTH: the conserved variables of the state at the call, smoothed in latitude (see the note
+    // at the top). Built before the column loop, which writes the fields the neighbours would be read from.
+    const int jm_ = m.jm, km_ = m.km;
+    auto cid = [&](int i, int j, int k) -> size_t { return ((size_t)i * jm_ + j) * km_ + k; };
+    std::vector<double> SH, SQ, SR;
+    std::vector<char>   SF;                                  // 1 = fluid cell with a valid state
+    if(smooth > 0){
+        const size_t nc = (size_t)im * jm_ * km_;
+        SH.assign(nc, 0.0); SQ.assign(nc * ng, 0.0); SR.assign(nc * std::max(nt, 1), 0.0); SF.assign(nc, 0);
+        #pragma omp parallel for collapse(2)
+        for(int j = 0; j < jm_; j++) for(int k = 0; k < km_; k++) for(int i = 0; i < im; i++){
+            if(m.SeaMount.x[i][j][k] == 1.0) continue;
+            const double TT = m.t.x[i][j][k] * m.t_ref, rr = m.rho_at(i, j, k), zz = double(m.get_layer_height(i)) * 1.0e3;
+            if(!(TT > 0.0) || !(rr > 0.0) || !std::isfinite(TT + rr)) continue;
+            const size_t c = cid(i, j, k);
+            double h = cp * TT + grav * zz;
+            for(int g = 0; g < ng; g++){
+                const double v_ = std::max(0.0, G[g].v->x[i][j][k]) / rr, c_ = std::max(0.0, G[g].c->x[i][j][k]) / rr,
+                             i_ = std::max(0.0, G[g].ice->x[i][j][k]) / rr;
+                SQ[c * ng + g] = v_ + c_ + i_;
+                h -= G[g].lv * c_ + G[g].ls * i_;
+            }
+            for(int r = 0; r < nt; r++){ SR[c * nt + r] = TR[r].f->x[i][j][k] / rr; h -= TR[r].L * SR[c * nt + r]; }
+            SH[c] = h; SF[c] = 1;
+        }
+        const int nq = 1 + ng + nt;
+        for(int pass = 0; pass < smooth; pass++){
+            const std::vector<double> H0(SH), Q0(SQ), R0(SR);
+            #pragma omp parallel for collapse(2)
+            for(int j = 0; j < jm_; j++) for(int k = 0; k < km_; k++) for(int i = 0; i < im; i++){
+                const size_t c = cid(i, j, k);
+                if(!SF[c]) continue;
+                double wn[2] = {0.0, 0.0}; size_t cn[2] = {c, c};
+                for(int s_ = 0; s_ < 2; s_++){
+                    const int jj = j + (s_ ? 1 : -1);
+                    if(jj < 0 || jj >= jm_) continue;
+                    const size_t c2 = cid(i, jj, k);
+                    if(SF[c2]){ wn[s_] = 0.25; cn[s_] = c2; }
+                }
+                const double wc = 1.0 - wn[0] - wn[1];
+                for(int x = 0; x < nq; x++){
+                    auto F = [&](size_t cc) -> double {
+                        return x == 0 ? H0[cc] : (x <= ng ? Q0[cc * ng + (x - 1)] : R0[cc * nt + (x - 1 - ng)]); };
+                    const double val = wc * F(c) + wn[0] * F(cn[0]) + wn[1] * F(cn[1]);
+                    if(x == 0) SH[c] = val; else if(x <= ng) SQ[c * ng + (x - 1)] = val; else SR[c * nt + (x - 1 - ng)] = val;
+                }
+            }
+        }
+        static bool said = false;
+        if(!said){ said = true; printf("      %s: %s_MCA_SMOOTH=%d: stability searched on a column smoothed in latitude,"
+                                       " the segments mixed in the column's own state\n", TAG, TAG, smooth); }
+    }
+
     long long n_columns = 0, n_layers = 0, n_moist_trig = 0, n_dry_trig = 0, n_held = 0, n_unstable_T = 0, n_skipped = 0;
     int    max_passes_used = 0;
     double max_dT_K = 0.0, max_drift_h = 0.0, max_drift_q = 0.0;
@@ -530,6 +596,21 @@ inline void MoistConvectiveAdjustment<Model>::run(){
                 hL[i] = h;
             }
             if(!ok){ n_skipped++; continue; }
+
+            // <TAG>_MCA_SMOOTH: search on the smoothed column, keep the own state for the mixing.
+            std::vector<double> hLr, qtr, qrr, qvr, qcr, qir;
+            std::vector<std::pair<int,int>> segs;
+            if(smooth > 0){
+                for(int i = i0; i <= i1 && ok; i++) if(!SF[cid(i, j, k)]) ok = false;
+                if(!ok){ n_skipped++; continue; }
+                hLr = hL; qtr = qt; qrr = qr; qvr = qv; qcr = qc; qir = qi;
+                for(int i = i0; i <= i1; i++){
+                    const size_t c = cid(i, j, k);
+                    hL[i] = SH[c];
+                    for(int g = 0; g < ng; g++) qt[i * ng + g] = SQ[c * ng + g];
+                    for(int r = 0; r < nt; r++) qr[i * nt + r] = SR[c * nt + r];
+                }
+            }
 
             // The tracers' share of h_L in a cell: equil() solves for T with the gases' latent heat only,
             // so it is handed h_L + this (the tracers are not changed by the solve).
@@ -656,12 +737,53 @@ inline void MoistConvectiveAdjustment<Model>::run(){
                         if(!ext) break;
                     }
                     layers += (b - a + 1);
+                    if(smooth > 0) segs.emplace_back(a, b);
                     changed = true;
                     i = b;
                 }
             }
             if(fail){ n_skipped++; continue; }              // nothing written: the column keeps its state
             if(layers == 0) continue;
+
+            // <TAG>_MCA_SMOOTH: back to the column's own state; mix the union of the segments found above.
+            if(smooth > 0){
+                hL = hLr; qt = qtr; qr = qrr; qv = qvr; qc = qcr; qi = qir;
+                std::fill(touched.begin(), touched.end(), 0); std::fill(eq_ok.begin(), eq_ok.end(), 0);
+                for(int i = i0; i <= i1; i++) T[i] = T0[i];
+                hL0 = hL; qt0 = qt; qr0 = qr;
+                sum_h0 = 0.0; std::fill(sum_q0.begin(), sum_q0.end(), 0.0);
+                for(int i = i0; i <= i1; i++){
+                    sum_h0 += w[i] * hL[i];
+                    for(int g = 0; g < ng; g++) sum_q0[g] += w[i] * qt[i * ng + g];
+                    for(int r = 0; r < nt; r++) sum_q0[ng + r] += w[i] * qr[i * nt + r];
+                }
+                std::sort(segs.begin(), segs.end());
+                std::vector<std::pair<int,int>> un;
+                for(const auto& sg : segs){
+                    if(!un.empty() && sg.first <= un.back().second) un.back().second = std::max(un.back().second, sg.second);
+                    else un.push_back(sg);
+                }
+                layers = 0;
+                for(const auto& sg : un){
+                    const int a = sg.first, b = sg.second;
+                    double sw = 0.0, sh = 0.0;
+                    std::vector<double> sq(ng, 0.0), sr(nt, 0.0);
+                    for(int q = a; q <= b; q++){
+                        sw += w[q]; sh += w[q] * hL[q];
+                        for(int g = 0; g < ng; g++) sq[g] += w[q] * qt[q * ng + g];
+                        for(int r = 0; r < nt; r++) sr[r] += w[q] * qr[q * nt + r];
+                    }
+                    for(int q = a; q <= b; q++){
+                        hL[q] = sh / sw;
+                        for(int g = 0; g < ng; g++) qt[q * ng + g] = sq[g] / sw;
+                        for(int r = 0; r < nt; r++) qr[q * nt + r] = sr[r] / sw;
+                        if(!settle(q)){ fail = true; break; }
+                    }
+                    if(fail) break;
+                    layers += (b - a + 1);
+                }
+                if(fail){ n_skipped++; continue; }
+            }
 
             // <TAG>_MCA_RELAX: only a fraction of the adjustment, on the conserved variables.
             if(relax < 1.0){
