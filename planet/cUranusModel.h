@@ -530,6 +530,8 @@ public:
     // GIANTS-CH4-PHASE): the MCA settles mixed cells with the saturation adjustment's temperature split instead
     // of all ice below t_0, which had removed the liquid the adjustment made. =0 restores.
     static bool mca_default_phase(){ return true; }
+    // <TAG>_MCA_SMOOTH default (shared ConvectiveAdjustment.h, hook 2026-11-17): 0 = off, as before.
+    static int mca_default_smooth(){ return 0; }
     // Defaults of ATURAN_SATADJ_NEWTON and ATURAN_SATADJ_CONSERVE (shared SaturationAdjustment.h): ON since
     // 2026-10-09. They act only when the shared routine is selected (ATURAN_SATADJ, this model's
     // default since 2026-10-10). Run for 16 iterations: without them the shared

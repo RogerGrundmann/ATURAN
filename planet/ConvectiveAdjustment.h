@@ -339,7 +339,8 @@ inline void ConvectiveAdjustment<Model>::run(){
  *   <TAG>_MCA_LOADING  1  condensate weight in the density test (only with LEDOUX)
  *   <TAG>_MCA_RELAX    1  fraction of the adjustment applied per call, on the conserved variables
  *   <TAG>_MCA_PASSES  64  sweep cap per column
- *   <TAG>_MCA_SMOOTH   0  (2026-11-09, ATSAT row SAT-SPINUP-DRIFT) n > 0: the stability test runs on a column
+ *   <TAG>_MCA_SMOOTH   Model::mca_default_smooth() (2026-11-09, ATSAT row SAT-SPINUP-DRIFT; hook 2026-11-17:
+ *                         ATSAT 2, the others 0) n > 0: the stability test runs on a column
  *                         smoothed in latitude -- h_L, q_t and the tracers of the state at the call, n passes of
  *                         a 1-2-1 filter over the rows j-1, j, j+1 (same i, k; solid and missing neighbours give
  *                         their weight to the centre) --, the whole search (census, sweeps, extension) runs on
@@ -405,7 +406,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     static const bool   ledoux   = ATPhys::env_int(TAG, "MCA_LEDOUX", 1) != 0;
     static const bool   loading  = ATPhys::env_int(TAG, "MCA_LOADING", 1) != 0;
     static const double relax    = std::min(1.0, std::max(0.0, ATPhys::env_double(TAG, "MCA_RELAX", 1.0)));
-    static const int    smooth   = std::max(0, ATPhys::env_int(TAG, "MCA_SMOOTH", 0));
+    static const int    smooth   = std::max(0, ATPhys::env_int(TAG, "MCA_SMOOTH", Model::mca_default_smooth()));
     static const int    max_pass = [TAG](){ const int v = ATPhys::env_int(TAG, "MCA_PASSES", 64); return v > 0 ? v : 64; }();
     // <TAG>_MCA_PHASE (see the note at the top): 1 = the saturation adjustment's temperature split when its BERGERON is 0.
     static const bool   phase_split = [TAG](){
