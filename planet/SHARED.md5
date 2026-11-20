@@ -1,5 +1,5 @@
 # Checksums of the SHARED headers — files that must be BYTE-IDENTICAL in every planet model:
-# ATJUP, ATSAT, ATNEPT and ATURAN. All ELEVEN are present in all four; the porting that this
+# ATJUP, ATSAT, ATNEPT and ATURAN. All TWELVE are present in all four; the porting that this
 # header used to track the progress of is finished, and the lists of what had "still to come"
 # are gone with it.
 #
@@ -31,6 +31,7 @@ ec8d72ec2afdb3a7d71e9eb604669ced  planet/ConvectiveAdjustment.h
 03b9170d1281bd85145ad79d1ca1da44  planet/ParaViewWriter.h
 05e659b11ce6c48d2467dc8665fe54a3  planet/Precipitation.h
 82e3008cf0f6dbf67a75cb772b3d7cef  planet/PressureSolver.h
+9c8caf098f3ddeaf14d1fbe6eb71365c  planet/ProcessDiag.h
 0fb6bb0fcc468d3a85e69b5b0946c4ed  planet/Radiation.h
 971cde804d42bdd9f3d55b6ee7802463  planet/Reporting.h
 ef26384998952969edea462bc9b526b6  planet/SaturationAdjustment.h

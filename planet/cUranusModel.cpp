@@ -27,6 +27,7 @@
 #include "PressureSolver.h"
 #include "ChromUran.h"
 #include "ZseedUran.h"          // ATURAN_T_SEED / ATURAN_ZDEV (row ICE-FROZEN-FLOW)         // ATURAN_CHROM, the chromophore tracer
+#include "ProcessDiag.h"     // ATURAN_PROC_DIAG, output-only (process fields), SHARED
 
 using namespace std;
 using namespace tinyxml2;
@@ -934,6 +935,14 @@ void cUranusModel::Run(){
     }
 
     chromInfo();                                                        // ATURAN_CHROM: one line when the tracer is on
+    // ATURAN_PROC_DIAG (shared ProcessDiag.h), output-only, default off. The condensable gases with their
+    // precipitation arrays (H2S condenses here), and the density rhs_t divides Q_precip by (r_mix).
+    ProcessDiag<cUranusModel> proc_(*this, {
+        { "H2O", &h2o, &h2o_cloud, &h2o_ice, &P_rain, &P_snow, &P_graupel, &S_precip_h2o, &S_precip_h2o_cloud, &S_precip_h2o_ice },
+        { "NH3", &nh3, &nh3_cloud, &nh3_ice, &P_nh3_rain, &P_nh3_snow, &P_nh3_graupel, &S_precip_nh3, &S_precip_nh3_cloud, &S_precip_nh3_ice },
+        { "H2S", &h2s, &h2s_cloud, &h2s_ice, &P_h2s_rain, &P_h2s_snow, &P_h2s_graupel, &S_precip_h2s, &S_precip_h2s_cloud, &S_precip_h2s_ice },
+        { "CH4", &ch4, &ch4_cloud, &ch4_ice, &P_ch4_rain, &P_ch4_snow, &P_ch4_graupel, &S_precip_ch4, &S_precip_ch4_cloud, &S_precip_ch4_ice } },
+        [this](int, int, int) -> double { return r_mix; });
     for(iter_n = 1; iter_n <= nm; iter_n++){
 
         tattribBegin();   // no-op unless ATURAN_TATTRIB is set
@@ -979,6 +988,7 @@ void cUranusModel::Run(){
             tb_mark(TB_PRE); cwb_mark(TB_PRE); bh_mark(BH_SOLVER);
             tattrib("pressure+damp");
 
+            proc_.satadj_begin();
             SaturationAdjustmentUran(*this).run("H2O",
                 coeff_h2o_A, coeff_h2o_B, coeff_h2o_A_i, coeff_h2o_B_i,
                 t_0_h2o, t_00_h2o,
@@ -1012,9 +1022,10 @@ void cUranusModel::Run(){
 
             tattrib("SaturationAdjust");
 
+            proc_.satadj_end();
             // Must follow the saturation adjustments: it removes condensate in place.
             tb_mark(TB_SATADJ); cwb_mark(TB_SATADJ); bh_mark(BH_SATADJ);
-            if(precip_enabled()) PrecipitationUran(*this).run();
+            if(precip_enabled()){ proc_.precip_begin(); PrecipitationUran(*this).run(); proc_.precip_end(); }
             tb_mark(TB_PRECIP); cwb_mark(TB_PRECIP); bh_mark(BH_PRECIP);
 
             // ATURAN_RK_SCALAR_SYNC=<0|1|2> (2026-10-11; DEFAULT 2 on the user's word, 0 restores):
@@ -1262,7 +1273,9 @@ void cUranusModel::Run(){
                   C_ch4, L0_ch4, R_ch4, del_alf_ch4, del_bet_ch4, C_ch4_ice, L0_ch4_ice, del_alf_ch4_ice, del_bet_ch4_ice, t_00_ch4 } };
             std::vector<Tr_> tracers = { { "NH4SH", &nh4sh, 0.0, true, 0.0 } };
             if(chrom_on()) tracers.push_back({ "chrom", &chrom, 0.0, false, 0.0 });   // ATURAN_CHROM: mixed as ATJUP mixes it
+            proc_.mca_begin();
             MoistConvectiveAdjustmentUran(*this, gases, tracers).run();
+            proc_.mca_end();
         }
         tb_mark(TB_AFTER); cwb_mark(TB_AFTER); bh_mark(BH_AFTER);
         if(bh_every > 0 && iter_n % bh_every == 0) bh_print();
@@ -1357,6 +1370,7 @@ void cUranusModel::Run(){
         if(vtk_stride > 0 ? (iter_n % vtk_stride == 0) : (iter_n % checkpoint == 0)) writeData();
         // ATURAN_CLOUDVIEW_STRIDE=<n> > 0 (cUranusModel.h): the cloudview on its own cadence; unset rides with the panorama in writeData.
         if(cloudview_stride() > 0 && iter_n % cloudview_stride() == 0) paraview_cloudview(iter_n);
+        proc_.iteration_done(iter_n);                    // ATURAN_PROC_DIAG: write + reset at its stride
 
         if(panorama_cnt == panorama_print) panorama_cnt = 0;
 
