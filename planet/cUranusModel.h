@@ -626,10 +626,13 @@ public:
     static double sinthe_min(){
         static const double v = [](){
             const char* e = getenv("ATURAN_SINTHE_MIN");
-            // DEFAULT 0.0 since 2026-11-04 (true sine as ATSAT; user: "use the true sine like ATSAT for
-            // Uranus and Neptune too", "flip the ice giant defaults"; =0.4 restores; satchk UT0 in
-            // ATNEPT/satchk/cellinit_2026-11-04: 200 it stable, extrema as the floored run).
-            const double x = e ? atof(e) : 0.0;
+            // DEFAULT 0.4 again since 2026-11-20 (ATJUP-register row URAN-POLE-BLOWUP; user: "make 0.4
+            // the default again"). 11-04..11-20 the default was 0.0 (true sine as ATSAT), checked for
+            // 200 it only: from scratch the polar continuity residuum then grows from ~500 it
+            // (0.0008 @500 -> 1.9 @600 -> NaN @756), while =0.4 stays at 0.0006 @600
+            // (ATURAN/satchk/poleblowup_2026-11-20 F0 vs S4). ATNEPT runs the true sine and stays
+            // clean, so the cause is Uranus-specific and not found yet; =0 restores the true sine.
+            const double x = e ? atof(e) : 0.4;
             return (x >= 0.0 && x < 1.0) ? x : 0.4;
         }();
         return v;
