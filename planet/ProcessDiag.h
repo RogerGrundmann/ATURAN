@@ -30,7 +30,8 @@
  * Units: K/s; g/m3/s (species x 1e3, the scale of the slices and of printMinMax); P_* kg/m2/s as the arrays
  * hold. Means are over k = 0..km-2 (k = km-1 is the seam copy).
  *
- * Output: <output_path>/<Planet>_proczm_0_<iter>.vtk, legacy ASCII structured grid with the geometry of the
+ * Output: <output_path>/<Planet>_proczm_<iter>.vtk ('proczm' = process, zonal mean; named <Planet>_proczm_0_<iter>.vtk
+ * until 2026-11-20), legacy ASCII structured grid with the geometry of the
  * zonal slice (DIMENSIONS jm im 1, x = 0.1 i, y = 0.05 j), plus 'height' (km) and 'PressureStat' (zonal mean at
  * the write), so ParaView and tools/render.py read it as a zonal slice. ~2 MB per file.
  *
@@ -88,7 +89,7 @@ public:
         n3 = (size_t)m.im * m.jm * m.km;
         acc.assign(names.size() * m.im * m.jm, 0.0);
         snap.assign(2 + G, std::vector<double>(n3, 0.0));
-        printf("\n      %s: [PROC] %s_PROC_DIAG=%d: process fields, zonal means every %d iterations -> %s/%s_proczm_0_<iter>.vtk\n",
+        printf("\n      %s: [PROC] %s_PROC_DIAG=%d: process fields, zonal means every %d iterations -> %s/%s_proczm_<iter>.vtk\n",
                Model::planet_tag(), Model::planet_tag(), stride(), stride(), m.output_path.c_str(), Model::planet_name());
     }
     bool active() const { return on; }
@@ -222,7 +223,7 @@ private:
     void write(int iter_n){
         const double s_it = m.dt * m.L_atm * 1.0e3 / m.u_0;     // physical seconds per iteration
         const double t_int = n_it * s_it, nk = m.km - 1;
-        const std::string name = m.output_path + "/" + Model::planet_name() + "_proczm_0_" + std::to_string(iter_n) + ".vtk";
+        const std::string name = m.output_path + "/" + Model::planet_name() + "_proczm_" + std::to_string(iter_n) + ".vtk";
         std::ofstream f(name);
         if(!f.is_open()){ fprintf(stderr, "%s: [PROC] cannot open %s\n", Model::planet_tag(), name.c_str()); return; }
         char buf[64];
