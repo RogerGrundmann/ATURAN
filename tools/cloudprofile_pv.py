@@ -34,6 +34,7 @@ VIEW_SCRIPT = r'''
 LATS = @LATS@
 PLANET = @PLANET@
 TITLE = @TITLE@
+FS_TICK, FS_LABEL, FS_TITLE, FS_LEGEND, FS_BAND, FS_SUPTITLE = 13, 15, 16, 14, 12, 16   # text sizes (2026-11-21: larger, user)
 
 def setup_data(view):
     from paraview.vtk import vtkDataObject
@@ -91,7 +92,7 @@ def render(view, width, height):
             if inb.any():
                 ax.axhspan(z[inb].min(), z[inb].max(), color=c, alpha=0.07, lw=0)
                 ax.text(xmax * 0.6, z[inb].min() + (0.3 if nm == "H2S" else 0.5) * (z[inb].max() - z[inb].min()), nm + " mixed phase",
-                        color=c, fontsize=7, ha="right", va="center", alpha=0.8)
+                        color=c, fontsize=FS_BAND, ha="right", va="center", alpha=0.9)
         for (nm, liq, ice, c, f) in sp:
             L = arr(liq); I = arr(ice)
             if L is not None and (L[:, j] > 0).any(): ax.plot(np.where(L[:, j] > 0, L[:, j] * f, np.nan), z, color=c, lw=1.8, label=nm + " liquid cloud")
@@ -101,22 +102,22 @@ def render(view, width, height):
             s = S[:, j] * 1e-6                            # written x1e9 (ug/m3) -> g/m3
             ax.plot(np.where(s > 0, s, np.nan), z, color="#8c564b", lw=1.8, ls=":", label="NH4SH (solid, chemistry)")
         ax.set_xscale("log"); ax.set_xlim(xmin, xmax); ax.grid(alpha=0.3, which="both")
-        ax.set_xlabel("condensate density [g/m3]"); ax.set_title("lat %+d" % lat, fontsize=10)
+        ax.set_xlabel("condensate density [g/m3]", fontsize=FS_LABEL); ax.set_title("lat %+d" % lat, fontsize=FS_TITLE)
         ticks = np.linspace(0, ni - 1, 11).round().astype(int)
         ax.set_ylim(z.min(), z.max()); ax.set_yticks(z[ticks]); ax.set_yticklabels(["%.0f" % t[i] for i in ticks])
-        if ax is axs[0]: ax.set_ylabel("temperature [K]")
+        if ax is axs[0]: ax.set_ylabel("temperature [K]", fontsize=FS_LABEL)
         if p is not None:
             ax2 = ax.twinx(); ax2.set_ylim(ax.get_ylim()); ax2.set_yticks(z[ticks])
-            ax2.set_yticklabels(["%.3g" % p[i] for i in ticks], fontsize=8)
-            if ax is axs[-1]: ax2.set_ylabel("pressure [bar]")
-        ax.tick_params(labelsize=8)
+            ax2.set_yticklabels(["%.3g" % p[i] for i in ticks], fontsize=FS_TICK)
+            if ax is axs[-1]: ax2.set_ylabel("pressure [bar]", fontsize=FS_LABEL)
+        ax.tick_params(labelsize=FS_TICK)
     h, l = [], []
     for ax in axs:
         for hh, ll in zip(*ax.get_legend_handles_labels()):
             if ll not in l: h.append(hh); l.append(ll)
-    if h: fig.legend(h, l, loc="lower center", ncol=min(len(l), 7), fontsize=8, frameon=False)
-    fig.suptitle(TITLE, fontsize=11)
-    fig.subplots_adjust(left=0.06, right=0.94, bottom=0.17, top=0.9, wspace=0.28)
+    if h: fig.legend(h, l, loc="lower center", ncol=min(len(l), 5), fontsize=FS_LEGEND, frameon=False)
+    fig.suptitle(TITLE, fontsize=FS_SUPTITLE)
+    fig.subplots_adjust(left=0.065, right=0.93, bottom=0.2, top=0.88, wspace=0.34)
     return python_view.figure_to_image(fig)
 '''
 
