@@ -615,7 +615,7 @@ void cUranusModel::Run(){
     damp_species_init(ch4_cloud);
     damp_species_init(ch4_ice);
 
-    // ATURAN_NH4SH_EQ (default 0): build the NH4SH cloud as the equilibrium of the set-up NH3 / H2S
+    // ATURAN_NH4SH_EQ (default 1 since 2026-11-22): build the NH4SH cloud as the equilibrium of the set-up NH3 / H2S
     // (parcel sweep, ChemistryUran::EquilibriumNH4SH) after the four set-up saturation adjustments.
     if(ChemistryUran::nh4sh_eq()) ChemistryUran(*this).EquilibriumNH4SH("init");
 
@@ -1026,7 +1026,7 @@ void cUranusModel::Run(){
             tattrib("SaturationAdjust");
 
             proc_.satadj_end();
-            // ATURAN_NH4SH_EQ (default 0): the NH4SH equilibrium adjustment on the adjusted NH3 / H2S. Counted in
+            // ATURAN_NH4SH_EQ (default 1 since 2026-11-22): the NH4SH equilibrium adjustment on the adjusted NH3 / H2S. Counted in
             // the TB / CWB stage "SaturationAdjustment" (the mark follows); PROC_DIAG books it as chemistry.
             if(ChemistryUran::nh4sh_eq()){ proc_.chem_begin(); ChemistryUran(*this).EquilibriumNH4SH("loop"); proc_.chem_end(); }
             // Must follow the saturation adjustments: it removes condensate in place.

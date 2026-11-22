@@ -125,7 +125,7 @@ public:
     static double nh4sh_formation_heat(){ return 4705.0 * std::log(10.0) * 8314.46 / 51.1114; }
 
     static bool nh4sh_eq(){
-        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ"); return e && atoi(e) != 0; }();
+        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ"); return !e || atoi(e) != 0; }();   // default 1 since 2026-11-22
         return v;
     }
 
@@ -179,7 +179,7 @@ public:
     // keeps the equilibrium vapour, NO NH4SH is deposited, and every cell above gets only what forms between it
     // and the level below -- the Weidenschilling & Lewis (1973) / Atreya & Wong (2005) construction.
     static bool nh4sh_eq_sweep(){
-        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ_SWEEP"); return e && atoi(e) != 0; }();
+        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ_SWEEP"); return !e || atoi(e) != 0; }();   // default 1 since 2026-11-22
         return v;
     }
 
