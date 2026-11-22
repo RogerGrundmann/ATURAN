@@ -169,6 +169,32 @@ public:
         return x;
     }
 
+    // ATURAN_NH4SH_EQ_SWEEP=1 (2026-11-22, row GIANTS-NH4SH-EQ; default 0 = the sweep below unchanged): ECCM-style
+    // start of the set-up parcel sweep. The ice-giant domains lie wholly ABOVE the NH4SH cloud base (Atreya et al.:
+    // 30-40 bar; Neptune's floor 31.5, Uranus's 17.3 bar), so the NH4SH that the deep NH3 / H2S form on the way up
+    // belongs to layers below the domain. With 0 the first fluid cell of each column equilibrates its own full
+    // deep abundances IN PLACE, keeping all that NH4SH and its heat (Uranus it 8: 130 / 99 g/m3 in the two bottom
+    // rows, max dT 28.7 K; it then relaxes, -16 % column N by it 700). With 1 that cell is the cloud base of the
+    // parcel instead: the parcel is brought to equilibrium at the cell's set-up T (closed form, no heat), the cell
+    // keeps the equilibrium vapour, NO NH4SH is deposited, and every cell above gets only what forms between it
+    // and the level below -- the Weidenschilling & Lewis (1973) / Atreya & Wong (2005) construction.
+    static bool nh4sh_eq_sweep(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ_SWEEP"); return e && atoi(e) != 0; }();
+        return v;
+    }
+
+    // Equilibrium of a parcel at FIXED T: x [kmol/m3] with (a-x)(b-x) (R* T)^2 = K_p(T), 0 <= x <= min(a, b).
+    // Smaller root of x^2 - (a+b) x + ab - K = 0, K = K_p / (R* T)^2, in the cancellation-free form.
+    static double parcelNH4SHFixedT(double a, double b, double T){
+        constexpr double R_univ = 8314.46, atm = 101325.0;
+        if (!(T > 0.0) || !(a > 0.0) || !(b > 0.0)) return 0.0;
+        const double RT = R_univ * T;
+        const double K = std::pow(10.0, 14.82 - 4705.0 / T) * atm * atm / (RT * RT);
+        if (a * b <= K) return 0.0;
+        const double d = a - b;
+        return 2.0 * (a * b - K) / ((a + b) + std::sqrt(d * d + 4.0 * K));
+    }
+
     // where == "init": the set-up's column construction (Weidenschilling & Lewis 1973): each column is swept
     // bottom-up with a rising parcel; a cell takes NH3 and H2S as the parcel's remaining mass fractions (capped
     // by its own set-up value), is equilibrated, and passes what is left upward. Not conservative by design (it
@@ -179,13 +205,15 @@ public:
         using namespace std;
         auto begin = chrono::high_resolution_clock::now();
         const bool sweep = std::string(where) == "init";
-        long n_form = 0, n_decomp = 0, n_all = 0;
-        double dm_form = 0.0, dm_decomp = 0.0, dT_max = 0.0, s_max = 0.0;
+        const bool eccm = sweep && nh4sh_eq_sweep();                               // NH4SH_EQ_SWEEP, see above
+        long n_form = 0, n_decomp = 0, n_all = 0, n_base = 0;
+        double dm_form = 0.0, dm_decomp = 0.0, dT_max = 0.0, s_max = 0.0, dm_base = 0.0;
         #pragma omp parallel for collapse(2) schedule(dynamic, 8) \
-            reduction(+:n_form, n_decomp, n_all, dm_form, dm_decomp) reduction(max:dT_max, s_max)
+            reduction(+:n_form, n_decomp, n_all, dm_form, dm_decomp, n_base, dm_base) reduction(max:dT_max, s_max)
         for (int j = 0; j < m.jm; j++) {
             for (int k = 0; k < m.km; k++) {
                 double q_nh3 = 1.0e300, q_h2s = 1.0e300;                            // the parcel, mass fractions
+                bool base_ = eccm;                                                    // NH4SH_EQ_SWEEP: first fluid cell = parcel base
                 for (int i = 0; i < m.im; i++) {
                     if (m.SeaMount.x[i][j][k] == 1.0) continue;
                     const double T_ = m.t.x[i][j][k] * m.t_ref;
@@ -194,6 +222,18 @@ public:
                     if (sweep) {
                         m.nh3.x[i][j][k] = min(m.nh3.x[i][j][k], q_nh3 * rho);
                         m.h2s.x[i][j][k] = min(m.h2s.x[i][j][k], q_h2s * rho);
+                    }
+                    if (base_) {
+                        // NH4SH_EQ_SWEEP: the parcel's NH4SH below this level is not in the domain -- equilibrate at the
+                        // set-up T, keep the vapour, deposit nothing, release no heat.
+                        base_ = false;
+                        const double a_ = max(0.0, m.nh3.x[i][j][k]) / m.m_nh3, b_ = max(0.0, m.h2s.x[i][j][k]) / m.m_h2s;
+                        const double xb = parcelNH4SHFixedT(a_, b_, T_);
+                        m.nh3.x[i][j][k] = max(0.0, m.nh3.x[i][j][k] - m.m_nh3 * xb);
+                        m.h2s.x[i][j][k] = max(0.0, m.h2s.x[i][j][k] - m.m_h2s * xb);
+                        q_nh3 = m.nh3.x[i][j][k] / rho; q_h2s = m.h2s.x[i][j][k] / rho;
+                        if (xb > 0.0) { n_base++; dm_base += m.m_nh4sh * xb; }
+                        continue;
                     }
                     bool all_ = false; double sat_ = 0.0, dT_ = 0.0;
                     const double x = equilibrateNH4SHCell(i, j, k, all_, sat_, dT_);
@@ -211,6 +251,9 @@ public:
                " max dT %.4f K; %.3f s\n", where, sweep ? ", parcel sweep" : "",
                nh4sh_formation_heat(), n_form, dm_form, n_decomp, dm_decomp, n_all, s_max, dT_max,
                chrono::duration_cast<chrono::nanoseconds>(end - begin).count() * 1e-9);
+        if (eccm)
+            printf("      ATURAN: EquilibriumNH4SH NH4SH_EQ_SWEEP: parcel base in the first fluid cell of %ld columns, NH4SH below"
+                   " the domain (not deposited) sum %.4e kg/m3\n", n_base, dm_base);
     }
 
     // -----------------------------------------------------------------------
