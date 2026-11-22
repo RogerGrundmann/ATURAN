@@ -447,7 +447,7 @@ void cUranusModel::init_vapour_cloud_ice(std::string gas,
                 if((gas == "NH3") && (p_u >= p_00_nh3)) val = fr * r_max[j];
                 if((gas == "H2S") && (p_u >= p_00_h2s)) val = fr * r_max[j];
                 if((gas == "H2O") && (p_u >= p_0_h2o))  val = fr * r_max[j];
-                if((gas == "CH4") && (p_u >= p_0_ch4))  val = fr * r_max[j];
+                if((gas == "CH4") && (init_p0_ch4() > 0.0) && (p_u >= init_p0_ch4()))  val = fr * r_max[j];   // ATURAN_INIT_P0_CH4 (cUranusModel.h)
 
                 c.x[i][j][k] = val;
             }

@@ -866,7 +866,15 @@ private:
     double p_0_h2o = 21.0;  // in bar
     double p_00_h2o = 50.0;  // in bar
 
-    double p_0_ch4 = 0.1;  // in bar
+    double p_0_ch4 = 0.1;  // in bar -- UNUSED since 2026-11-21 (the old set-up value; ATURAN_INIT_P0_CH4=0.1 restores it), see init_p0_ch4()
+    // ATURAN_INIT_P0_CH4=<bar> (2026-11-21, ATJUP row GIANTS-H2O-INIT; same pattern as ATSAT / ATNEPT _INIT_P0_H2O): the set-up gives every
+    // p >= p_0_ch4 the FULL deep CH4 abundance r_max whatever T is; at 0.1 bar that loads the deep CH4 into the 55-80 K layer above
+    // the real CH4 cloud base (~1.5-2 bar), which the set-up adjustment turns into ice (Neptune it 8: 37 g/m3 at 0.7 bar, 22 at 0.28,
+    // 5.5 at 0.1 bar). DEFAULT 0 = no override since 2026-11-21 (user: "that knob becomes the default"): CH4 follows magnus x
+    // saturation capped at r_max; =0.1 restores the old set-up (p_0_ch4).
+    double init_p0_ch4() const {
+        static const double v = [](){ const char* e = getenv("ATURAN_INIT_P0_CH4"); return e ? atof(e) : 0.0; }();
+        return v; }
     double p_00_ch4 = 1.1;  // in bar
 
     double p_0_h2s = 2.8;  // in bar
