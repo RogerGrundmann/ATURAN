@@ -9,10 +9,12 @@
 
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <string>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -50,6 +52,9 @@ public:
         const double B   = -0.3;
         const double T_d = 3020.0;
 
+        // ATURAN_NH4SH_EQ=1: the rate law contributes nothing (w_* = 0); the diffusion term stays.
+        const bool eq_on = nh4sh_eq();
+
         #pragma omp parallel for collapse(3) schedule(static)
         for(int k = k_first; k < km-1; k++){
             for(int j = 1; j < jm-1; j++){
@@ -58,7 +63,19 @@ public:
                     double kf  = react_rate_const(t_u, T_d, A, B);
                     double kb  = kf / keq;
 
-                    if((t_u <= m.t_0_nh4sh) && (t_u >= m.t_00_nh4sh)){
+                    if(eq_on){
+
+                        // ATURAN_NH4SH_EQ: EquilibriumNH4SH forms / decomposes the solid; no rate law.
+
+                        m.w_nh3.x[i][j][k]   = 0.0;
+
+                        m.w_h2s.x[i][j][k]   = 0.0;
+
+                        m.w_nh4sh.x[i][j][k] = 0.0;
+
+                    }
+
+                    else if((t_u <= m.t_0_nh4sh) && (t_u >= m.t_00_nh4sh)){
                         const double c_nh3   = m.nh3.x[i][j][k]   / m.m_nh3;
                         const double c_h2s   = m.h2s.x[i][j][k]   / m.m_h2s;
                         const double c_nh4sh = m.nh4sh.x[i][j][k] / m.m_nh4sh;
@@ -83,6 +100,117 @@ public:
 
         cout << "      ATURAN: ChemMassRateUran ended" << endl;
         return;
+    }
+
+    // ===================================================================================================
+    // ATURAN_NH4SH_EQ (2026-11-22, port of ATSAT_NH4SH_EQ / ATJUP_NH4SH_EQ; default 0 = the rate law, output unchanged):
+    // NH4SH as an EQUILIBRIUM ADJUSTMENT, replacing the rate law of ChemMassRateUran (whose w_* are then zero).
+    //
+    // WHY. The rate law has no source for its numbers (A / B / T_d = 1500 / -0.3 / 3020, keq = a ratio of molar
+    // masses, not an equilibrium constant, no heat released). On Uranus it makes only ~0.001 g/m3 NH4SH, so the
+    // set-up NH3 survives as a 10-20 g/m3 NH3 cloud, although H2S outnumbers NH3 (r_h2s / m_h2s : r_nh3 / m_nh3
+    // = 1.5) and in equilibrium the NH4SH deck should take ALL the NH3 (de Pater & Lissauer: no NH3 cloud on the
+    // ice giants; the surplus H2S forms the H2S ice cloud above).
+    //
+    // WHAT. NH3(g) + H2S(g) <-> NH4SH(s) is in equilibrium where p_NH3 p_H2S = K_p(T),
+    //     log10 K_p [atm^2] = 14.82 - 4705 / T          (Lewis 1969; Weidenschilling & Lewis 1973),
+    // with p_x = (c_x / m_x) R* T [Pa], c_x the species density [kg/m3]. Per fluid cell x [kmol/m3] of NH4SH
+    // forms (x > 0) or decomposes (x < 0, at most all of it), heating the cell by L x m_nh4sh / (cp_mix rho),
+    // L = 4705 ln(10) R* / m_nh4sh = 1.762e6 J/kg (the van't Hoff enthalpy of the same K_p). T and K_p are solved
+    // together (bisection). N, S and mass conserved by construction. No window. rho = p_stat / (R_mix T), the
+    // local density the saturation adjustment reads (and DiffMassFluxUran writes into rho_mix). Called after
+    // the four saturation adjustments (set-up: parcel sweep; loop: in place); NH4SH joins ATURAN_RK_SCALAR_SYNC
+    // (H2S is synced already); the MCA carries the enthalpy in NH4SH's tracer L.
+    // ===================================================================================================
+    static double nh4sh_formation_heat(){ return 4705.0 * std::log(10.0) * 8314.46 / 51.1114; }
+
+    static bool nh4sh_eq(){
+        static const bool v = [](){ const char* e = getenv("ATURAN_NH4SH_EQ"); return e && atoi(e) != 0; }();
+        return v;
+    }
+
+    // One cell to equilibrium; returns x [kmol/m3] formed (> 0) or decomposed (< 0) and applies it.
+    double equilibrateNH4SHCell(int i, int j, int k, bool& all_decomposed, double& sat_entry, double& dT)
+    {
+        constexpr double R_univ = 8314.46, atm = 101325.0;
+        static const double L_f = nh4sh_formation_heat();
+        auto Kp = [&](double T){ return std::pow(10.0, 14.82 - 4705.0 / T) * atm * atm; };   // Pa^2
+        all_decomposed = false; sat_entry = 0.0; dT = 0.0;
+        const double T0 = m.t.x[i][j][k] * m.t_ref;
+        if (!(T0 > 0.0)) return 0.0;
+        double rho = m.p_stat.x[i][j][k] * 1e5 / (m.R_mix * T0);
+        if (!(rho > 0.0) || !std::isfinite(rho)) rho = m.r_mix;
+        const double a = std::max(0.0, m.nh3.x[i][j][k])   / m.m_nh3;          // kmol/m3
+        const double b = std::max(0.0, m.h2s.x[i][j][k])   / m.m_h2s;
+        const double s = std::max(0.0, m.nh4sh.x[i][j][k]) / m.m_nh4sh;
+        const double heat = L_f * m.m_nh4sh / (m.cp_mix * rho);                // K per kmol/m3 formed
+        auto f = [&](double x){
+            const double T = T0 + heat * x, RT = R_univ * T;
+            return (a - x) * (b - x) * RT * RT - Kp(T); };
+        const double f0 = f(0.0);
+        double lo, hi;
+        if (f0 > 0.0)         { lo = 0.0; hi = std::min(a, b); sat_entry = f0 / Kp(T0); }
+        else if (s > 0.0) {
+            if (f(-s) <= 0.0) { lo = hi = -s; all_decomposed = true; }
+            else              { lo = -s; hi = 0.0; }
+        } else return 0.0;
+        if (hi > lo) for (int it = 0; it < 80; it++) {
+            const double xm = 0.5 * (lo + hi);
+            if (f(xm) > 0.0) lo = xm; else hi = xm;
+            if (hi - lo <= 1.0e-15 * std::max(a, std::max(b, s))) break;
+        }
+        const double x = (f0 > 0.0) ? lo : hi;                                 // never past the root
+        if (x == 0.0) return 0.0;
+        m.nh3.x[i][j][k]   = std::max(0.0, m.nh3.x[i][j][k]   - m.m_nh3   * x);
+        m.h2s.x[i][j][k]   = std::max(0.0, m.h2s.x[i][j][k]   - m.m_h2s   * x);
+        m.nh4sh.x[i][j][k] = std::max(0.0, m.nh4sh.x[i][j][k] + m.m_nh4sh * x);
+        dT = heat * x;
+        m.t.x[i][j][k] = (T0 + dT) / m.t_ref;
+        return x;
+    }
+
+    // where == "init": the set-up's column construction (Weidenschilling & Lewis 1973): each column is swept
+    // bottom-up with a rising parcel; a cell takes NH3 and H2S as the parcel's remaining mass fractions (capped
+    // by its own set-up value), is equilibrated, and passes what is left upward. Not conservative by design (it
+    // builds a state). Any other where: every fluid cell in place, conservative. Columns are independent, so
+    // the result does not depend on the thread count.
+    void EquilibriumNH4SH(const char* where)
+    {
+        using namespace std;
+        auto begin = chrono::high_resolution_clock::now();
+        const bool sweep = std::string(where) == "init";
+        long n_form = 0, n_decomp = 0, n_all = 0;
+        double dm_form = 0.0, dm_decomp = 0.0, dT_max = 0.0, s_max = 0.0;
+        #pragma omp parallel for collapse(2) schedule(dynamic, 8) \
+            reduction(+:n_form, n_decomp, n_all, dm_form, dm_decomp) reduction(max:dT_max, s_max)
+        for (int j = 0; j < m.jm; j++) {
+            for (int k = 0; k < m.km; k++) {
+                double q_nh3 = 1.0e300, q_h2s = 1.0e300;                            // the parcel, mass fractions
+                for (int i = 0; i < m.im; i++) {
+                    if (m.SeaMount.x[i][j][k] == 1.0) continue;
+                    const double T_ = m.t.x[i][j][k] * m.t_ref;
+                    double rho = (T_ > 0.0) ? m.p_stat.x[i][j][k] * 1e5 / (m.R_mix * T_) : 0.0;
+                    if (!(rho > 0.0) || !isfinite(rho)) rho = m.r_mix;
+                    if (sweep) {
+                        m.nh3.x[i][j][k] = min(m.nh3.x[i][j][k], q_nh3 * rho);
+                        m.h2s.x[i][j][k] = min(m.h2s.x[i][j][k], q_h2s * rho);
+                    }
+                    bool all_ = false; double sat_ = 0.0, dT_ = 0.0;
+                    const double x = equilibrateNH4SHCell(i, j, k, all_, sat_, dT_);
+                    if (sweep) { q_nh3 = m.nh3.x[i][j][k] / rho; q_h2s = m.h2s.x[i][j][k] / rho; }
+                    s_max = max(s_max, sat_); dT_max = max(dT_max, fabs(dT_));
+                    if (all_) n_all++;
+                    if (x > 0.0)      { n_form++;   dm_form   += m.m_nh4sh * x; }
+                    else if (x < 0.0) { n_decomp++; dm_decomp -= m.m_nh4sh * x; }
+                }
+            }
+        }
+        auto end = chrono::high_resolution_clock::now();
+        printf("      ATURAN: EquilibriumNH4SH (%s%s, Lewis K_p, L %.4e J/kg): formed in %ld cells (sum %.4e kg/m3),"
+               " decomposed in %ld (sum %.4e kg/m3, %ld completely), max p_NH3 p_H2S / K_p - 1 at entry %.3e,"
+               " max dT %.4f K; %.3f s\n", where, sweep ? ", parcel sweep" : "",
+               nh4sh_formation_heat(), n_form, dm_form, n_decomp, dm_decomp, n_all, s_max, dT_max,
+               chrono::duration_cast<chrono::nanoseconds>(end - begin).count() * 1e-9);
     }
 
     // -----------------------------------------------------------------------
