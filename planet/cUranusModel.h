@@ -541,9 +541,10 @@ public:
     // fifth to a half of its cell-calls unconverged; with them both are zero.
     static bool satadj_default_newton(){ return true; }
     static bool satadj_default_conserve(){ return true; }
-    // <TAG>_SATADJ_EVAP of the shared SaturationAdjustment.h (2026-10-21): off here -- it needs the
-    // local density, and <TAG>_LOCAL_RHO is not measured on this planet (ATSAT diverged with it).
-    static bool satadj_default_evap(){ return false; }
+    // <TAG>_SATADJ_EVAP of the shared SaturationAdjustment.h (2026-10-21): ON here since 2026-11-22 (was off: it needs
+    // the local density, and <TAG>_LOCAL_RHO is 1 since 2026-10-27). Without it cloud and ice never evaporate, so the
+    // set-up NH3 condensate outlived the NH4SH equilibrium that took its vapour (arm X1, satchk/nh4sheq_2026-11-22).
+    static bool satadj_default_evap(){ return true; }
     // <TAG>_SATADJ_BERGERON of the shared SaturationAdjustment.h (2026-10-25): off here -- measured on ATJUP only.
     static int satadj_default_bergeron(){ return 0; }
     // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
