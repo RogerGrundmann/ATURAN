@@ -12,6 +12,7 @@
 
 #include "cUranusModel.h"
 #include "Utils.h"
+#include "JetRef.h"   // ATURAN_JET_REF (shared)
 
 #include <iostream>
 #include <vector>
@@ -125,6 +126,20 @@ public:
             const char* e = getenv("ATURAN_V_INIT_SCALE"); return e ? atof(e) : ((cUranusModel::geo_balance() && !cell_init()) ? 0.0 : 1.0); }();  // ATURAN_CELL_INIT=1 keeps the cell (see cell_init())
         if(v_init_scale != 1.0)
             printf("      ATURAN: ATURAN_V_INIT_SCALE = %.4g (prescribed meridional cell scaled)\n", v_init_scale);
+
+        // <TAG>_JET_REF=1 (2026-11-23, row GIANTS-ZONAL-WIND; default 0 = the node table above, unchanged): every latitude row
+        // rebuilt from the reference profile in the SHARED JetRef.h, through this model's own init_v_or_w (tropopause value =
+        // table value, bottom 0, the model's vertical shape). Before the u_0 division, like the node table.
+        if(JetRef::on<cUranusModel>()){
+            double wmin_ = 1e30, wmax_ = -1e30;
+            for(int j_ = 0; j_ < m.jm; j_++){
+                const double lat_ = 90.0 - m.the.z[j_] * 180.0 / M_PI;
+                const double u_ = JetRef::u_ref<cUranusModel>(lat_);
+                wmin_ = std::min(wmin_, u_); wmax_ = std::max(wmax_, u_);
+                init_v_or_w(m.w, j_, u_, 0.0);
+            }
+            printf("      ATURAN: ATURAN_JET_REF = 1: zonal wind w prescribed from JetRef.h (tropopause %.1f .. %.1f m/s)\n", wmin_, wmax_);
+        }
 
         // non-dimensionalisation by u_0
         #pragma omp parallel for

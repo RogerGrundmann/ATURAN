@@ -36,3 +36,4 @@ ec8d72ec2afdb3a7d71e9eb604669ced  planet/ConvectiveAdjustment.h
 971cde804d42bdd9f3d55b6ee7802463  planet/Reporting.h
 a86e16ad1e1706797eeedcd42d511452  planet/SaturationAdjustment.h
 e777c93a7acbac8c20de62fa40a1b6db  planet/Turbulence.h
+89957825b129cc11a1c703dbf9f2c9f0  planet/JetRef.h
