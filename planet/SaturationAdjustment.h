@@ -87,8 +87,9 @@
  *
  * ===== <TAG>_SATADJ_EVAP (2026-10-21), DEFAULT Planet::satadj_default_evap() =====
  *
- * Since 2026-10-22 ATJUP returns true (with ATJUP_LOCAL_RHO default 1 the same day); ATSAT,
- * ATNEPT and ATURAN return false. <TAG>_SATADJ_EVAP=0 / 1 overrides either way.
+ * All four return true: ATJUP since 2026-10-22 (with ATJUP_LOCAL_RHO default 1 the same day),
+ * ATSAT since 2026-11-03, ATNEPT and ATURAN since 2026-11-22 (their set-up NH3 condensate outlived
+ * the vapour the NH4SH equilibrium took). <TAG>_SATADJ_EVAP=0 / 1 overrides either way.
  *
  * The entry test lets a cell into the iteration only when its vapour exceeds the LIQUID saturation
  * value q_Rain_0; every other cell is skipped. So cloud and ice were never evaporated or sublimated
