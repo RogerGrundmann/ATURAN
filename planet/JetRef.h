@@ -1,8 +1,9 @@
 #pragma once
 // ===== JetRef.h -- SHARED (byte-identical copy in ATJUP / ATSAT / ATNEPT / ATURAN, planet/SHARED.md5) =====
 //
-// <TAG>_JET_REF=1 (2026-11-23, row GIANTS-ZONAL-WIND, ATJUP register; DEFAULT 0 = the node table of each model, unchanged;
-// user: "I guess it is important to re-prescribe the jet from the references you opened", "write the JET_REF knob and run the pairs").
+// <TAG>_JET_REF (2026-11-23, row GIANTS-ZONAL-WIND, ATJUP register; user: "I guess it is important to re-prescribe the jet from the
+// references you opened", "write the JET_REF knob and run the pairs"). DEFAULT 1 since 2026-11-23 on all four (user: "Turn JET_REF
+// on by default for each model, the lowest level should keep their old equator values there"); =0 restores the node table.
 //
 // The prescribed zonal wind w of the four giants was a hand-made node table (de Pater & Lissauer Figs. 4.31 / 4.32), joined
 // linearly in latitude. Against the open-access cloud-level profiles it is off on every planet (literature/zonalwind_compare.png):
@@ -10,10 +11,11 @@
 // equatorial jet ~250 instead of 350-400 m/s, Jupiter's 17 S westward jet -148 instead of ~-58 m/s.
 //
 // With =1 each model, after building w its usual way and before dividing by u_0, rewrites EVERY latitude row j through its
-// own init_v_or_w(w, j, u_ref(lat_j), 0.0): the tropopause value is the table value, the vertical shape is the model's own
-// (linear from 0 at the bottom to the tropopause, then the model's top treatment), lat_j = 90 - the.z[j] in degrees.
-// NOTE the bottom value is 0 on every row, also at the ice giants' equator, whose nodes carried the equatorial wind down to the
-// bottom (-65 / -440 m/s); that is a deliberate first choice, not a measured one.
+// own init_v_or_w(w, j, u_ref(lat_j), w_bottom_j): the tropopause value is the table value, the vertical shape is the model's own
+// (linear from the bottom value to the tropopause, then the model's top treatment), lat_j = 90 - the.z[j] in degrees.
+// The BOTTOM value w_bottom_j is the row's bottom value from the node table, kept as it was: 0 on every row of ATJUP / ATSAT,
+// and on the ice giants -65 (ATURAN) / -440 m/s (ATNEPT) at the equator, tapering linearly to 0 at the next node (30 deg on
+// ATURAN). The 11-23 pairs (J1, bottom 0 everywhere) differ from the default only in that bottom.
 //
 // The tables are literature/zonalwind_reference_1deg.csv (zonalwind_reference.py), m/s eastward positive, 1-deg PLANETOCENTRIC:
 //   ATJUP   HST/OPAL 2018 cloud tracking, Schmider et al. 2024 PSJ 5, 100, Table 2 (-60..60 deg)
@@ -131,7 +133,7 @@ inline double u(const char* tag, double lat_deg){
 }
 
 template<class Planet> inline bool on(){
-    static const int v = ATPhys::env_int(Planet::planet_tag(), "JET_REF", 0);
+    static const int v = ATPhys::env_int(Planet::planet_tag(), "JET_REF", 1);
     return v != 0;
 }
 
