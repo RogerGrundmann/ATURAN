@@ -54,6 +54,13 @@ public:
 
         // ATURAN_NH4SH_EQ=1: the rate law contributes nothing (w_* = 0); the diffusion term stays.
         const bool eq_on = nh4sh_eq();
+        // ATURAN_CHEM_DIFFLUX_PLUS (2026-11-23, row GIANTS-CHEM-DIFFLUX; DEFAULT 0 = the minus below, unchanged):
+        // the sign of the diffusive term in massflux_*. ATSAT's ATSAT_CHEM_DIFFLUX_PLUS (SAT-CHEM-DIVERGE item 4,
+        // ChemistrySat.h): Fick's tendency is +D lap(c), so massflux = w MINUS difflux anti-diffuses. Belongs
+        // with ATURAN_CHEM_DIFFLUX_LAPLACIAN=1 (DiffMassFluxUran); either alone is not the physical pair.
+        // dsign is +1.0 or -1.0, so the default path is the subtraction it always was, exactly.
+        static const double dsign = [](){
+            const char* e = getenv("ATURAN_CHEM_DIFFLUX_PLUS"); return (e && atoi(e) != 0) ? 1.0 : -1.0; }();
 
         #pragma omp parallel for collapse(3) schedule(static)
         for(int k = k_first; k < km-1; k++){
@@ -87,9 +94,9 @@ public:
                         m.w_nh4sh.x[i][j][k] =  m.m_nh4sh * R_diff;
                     }
 
-                    m.massflux_h2s.x[i][j][k]   = m.w_h2s.x[i][j][k]   - m.difflux_h2s.x[i][j][k];
-                    m.massflux_nh3.x[i][j][k]   = m.w_nh3.x[i][j][k]   - m.difflux_nh3.x[i][j][k];
-                    m.massflux_nh4sh.x[i][j][k] = m.w_nh4sh.x[i][j][k] - m.difflux_nh4sh.x[i][j][k];
+                    m.massflux_h2s.x[i][j][k]   = m.w_h2s.x[i][j][k]   + dsign * m.difflux_h2s.x[i][j][k];
+                    m.massflux_nh3.x[i][j][k]   = m.w_nh3.x[i][j][k]   + dsign * m.difflux_nh3.x[i][j][k];
+                    m.massflux_nh4sh.x[i][j][k] = m.w_nh4sh.x[i][j][k] + dsign * m.difflux_nh4sh.x[i][j][k];
                 }
             }
         }
@@ -272,6 +279,19 @@ public:
         using namespace std;
         cout << endl << "      ATURAN: DiffMassFluxUran" << endl;
 
+        // ATURAN_CHEM_DIFFLUX_LAPLACIAN (2026-11-23, row GIANTS-CHEM-DIFFLUX; DEFAULT 0 = the two-pass scalar below,
+        // unchanged): ATSAT's ATSAT_CHEM_DIFFLUX_LAPLACIAN (SAT-CHEM-DIVERGE item 4, default there since e7f77de).
+        // Pass 2 below is NOT a divergence: it sums the components of d(j)/dx as scalars, with |.| on the
+        // theta part and no metric factors, and j_* carries the thermal-diffusion part jT ~ DT/T dT/dr, which
+        // is nonzero where the species is ZERO -- so difflux_* creates NH3 and H2S out of nothing wherever
+        // dT/dr varies. MEASURED (ATURAN/satchk/nh3ice_2026-11-23, cold-region CWB, 40 it): above 1.1 bar
+        // +41 g/m2 NH3 and +26.6 H2S from 'chemistry source' = -difflux_*, all of it deposited as NH3 ice at
+        // ~55 K (the ~0.03 g/m3 NH3 ice at 0.1-1 bar, growing linearly, on Uranus and Neptune).
+        // =1: difflux_x = D_x * laplacian_spherical(c_x), the diffusive tendency (zero where c is uniform);
+        // pair it with ATURAN_CHEM_DIFFLUX_PLUS=1. j_* and thermalmassflux are computed as before either way.
+        static const int difflux_laplacian = [](){
+            const char* e = getenv("ATURAN_CHEM_DIFFLUX_LAPLACIAN"); return e ? atoi(e) : 0; }();
+
         auto begin = std::chrono::high_resolution_clock::now();
 
         const int im = m.im, jm = m.jm, km = m.km;
@@ -375,9 +395,16 @@ public:
                     derivative_1_order(i, j, k, dj_nh4shdr, dj_nh4shdthe, dj_nh4shdphi, m.j_nh4sh);
                     derivative_1_order(i, j, k, dtdr,       dtdthe,       dtdphi,       m.t);
 
-                    m.difflux_h2s.x[i][j][k]   = dj_h2sdr   + std::abs(dj_h2sdthe)/rm   + dj_h2sdphi/rmsinthe;
-                    m.difflux_nh3.x[i][j][k]   = dj_nh3dr   + std::abs(dj_nh3dthe)/rm   + dj_nh3dphi/rmsinthe;
-                    m.difflux_nh4sh.x[i][j][k] = dj_nh4shdr + std::abs(dj_nh4shdthe)/rm + dj_nh4shdphi/rmsinthe;
+                    if(difflux_laplacian){
+                        // A genuine D * grad^2(c), as ATSAT and ATJUP compute it. See the note at the top of this routine.
+                        m.difflux_h2s.x[i][j][k]   = m.D_h2s   * laplacian_spherical(i, j, k, m.h2s);
+                        m.difflux_nh3.x[i][j][k]   = m.D_nh3   * laplacian_spherical(i, j, k, m.nh3);
+                        m.difflux_nh4sh.x[i][j][k] = m.D_nh4sh * laplacian_spherical(i, j, k, m.nh4sh);
+                    }else{
+                        m.difflux_h2s.x[i][j][k]   = dj_h2sdr   + std::abs(dj_h2sdthe)/rm   + dj_h2sdphi/rmsinthe;
+                        m.difflux_nh3.x[i][j][k]   = dj_nh3dr   + std::abs(dj_nh3dthe)/rm   + dj_nh3dphi/rmsinthe;
+                        m.difflux_nh4sh.x[i][j][k] = dj_nh4shdr + std::abs(dj_nh4shdthe)/rm + dj_nh4shdphi/rmsinthe;
+                    }
 
                     m.thermalmassflux.x[i][j][k] =
                           (m.j_nh3.x[i][j][k]   * m.cp_nh3
@@ -541,6 +568,36 @@ public:
     }
 
     // -----------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Spherical Laplacian for ATURAN_CHEM_DIFFLUX_LAPLACIAN, ported from ATSAT's ChemistrySat::laplacian_spherical
+    // (itself ATJUP's ChemistryJup::laplacian_spherical): rm through metricRadius(), the phi seam through
+    // ATPhys::phi_wrap, the 1/(rm sinthe) divisor floored by ATPhys::polar_divisor_floor (0.4, as in the
+    // shared FluxLimiter.h). coord_stretching is false here, so exp_rm folds to 1.
+    double laplacian_spherical(int i, int j, int k, Array& c)
+    {
+        const double rm       = m.metricRadius(m.rad.z[i]);
+        const double exp_rm   = m.coord_stretching ? 1.0 / (rm + 1.0) : 1.0;
+        const double exp_2_rm = exp_rm * exp_rm;
+        const double sinthe   = sin(m.the.z[j]);
+        const double costhe   = cos(m.the.z[j]);
+        const double rmsinthe = rm * std::max(sinthe, ATPhys::polar_divisor_floor<cUranusModel>());
+
+        const double d2cdr2   = (c.x[i+1][j][k] - 2.0*c.x[i][j][k] + c.x[i-1][j][k]) / (m.dr   * m.dr) * exp_2_rm;
+        const double d2cdthe2 = (c.x[i][j+1][k] - 2.0*c.x[i][j][k] + c.x[i][j-1][k]) / (m.dthe * m.dthe);
+        const bool phi_per = ATPhys::phi_periodic<cUranusModel>();
+        const int kw = ATPhys::phi_wrap(phi_per, k-1, m.km), ke = ATPhys::phi_wrap(phi_per, k+1, m.km);
+        const double d2cdphi2 = (c.x[i][j][ke] - 2.0*c.x[i][j][k] + c.x[i][j][kw]) / (m.dphi * m.dphi);
+
+        const double dcdr   = (c.x[i+1][j][k] - c.x[i-1][j][k]) / (2.0 * m.dr) * exp_rm;
+        const double dcdthe = (c.x[i][j+1][k] - c.x[i][j-1][k]) / (2.0 * m.dthe);
+
+        return d2cdr2
+             + 2.0 / rm * dcdr
+             + d2cdthe2 / (rm * rm)
+             + costhe / (rm * rmsinthe) * dcdthe
+             + d2cdphi2 / (rmsinthe * rmsinthe);
+    }
+
     void derivative_1_order(int i, int j, int k,
         double &dcdr, double &dcdthe, double &dcdphi, Array &c)
     {
