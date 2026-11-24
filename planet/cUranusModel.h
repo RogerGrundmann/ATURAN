@@ -547,6 +547,8 @@ public:
     static bool satadj_default_evap(){ return true; }
     // <TAG>_SATADJ_BERGERON of the shared SaturationAdjustment.h (2026-10-25): off here -- measured on ATJUP only.
     static int satadj_default_bergeron(){ return 0; }
+    // <TAG>_SATADJ_FREEZE of the shared SaturationAdjustment.h (2026-11-24): off here (ATSAT only, row GIANTS-PHASE-OUTSIDE).
+    static bool satadj_default_freeze(){ return false; }
     // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
     // ATURAN_PRECIP_SCALE overrides. CALIBRATED 2026-10-12 by the rule the Jovian and Saturnian
     // sets were made with: the latent-heat flux of the precipitation, Lv * (mean over the columns

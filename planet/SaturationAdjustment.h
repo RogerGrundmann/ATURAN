@@ -149,9 +149,10 @@
  * ATOM_Precipitation has the same split and no such case (checked 2026-10-25).
  * Default per planet through Planet::satadj_default_bergeron() (2026-10-25, user): 2 on ATJUP
  * (CH_4000 restart 4000 -> 5000: holes 3 -> 0, non-converged 0, NH3 liquid -> 0, ice x1.55, up to
- * +1.1 K under the vortex), 0 on ATSAT / ATNEPT / ATURAN (not measured there). =0 restores.
+ * +1.1 K under the vortex), 0 on ATNEPT / ATURAN (not measured there); 2 on ATSAT since 2026-11-24 (with its FREEZE default,
+ * see <TAG>_SATADJ_FREEZE). =0 restores.
  *
- * ===== <TAG>_SATADJ_FREEZE (2026-11-24), DEFAULT 0 =====
+ * ===== <TAG>_SATADJ_FREEZE (2026-11-24), DEFAULT Planet::satadj_default_freeze() =====
  *
  * Row GIANTS-PHASE-OUTSIDE. Liquid colder than t_00 was never frozen: the adjustment only moves the
  * VAPOUR to saturation, so in such a cell the liquid evaporates until the vapour is saturated and the
@@ -164,6 +165,10 @@
  * before the saturation test, so also where the saturation value underflows: liquid -> ice, warmed by
  * the latent heat of fusion and only as much as brings the cell up to t_00 -- the mirror of the melt.
  * A gas without a band (t_00 <= 0 or >= t_0) is left alone. =0: every written field as before.
+ * Default per planet through Planet::satadj_default_freeze() (2026-11-24, user: "choose Saturn's default FREEZE plus
+ * BERGERON 2"): true on ATSAT, together with its BERGERON default 2 (DL 5000 -> 5500, satchk/phaseout_2026-11-24: liquid
+ * below t_00 H2O 3738 -> ~0, NH3 10953 -> ~0 g/m2; H2O ice in its band with liquid from ~273 K, Atreya & Wong 2005 Fig. 3's
+ * phase structure; T, winds, OLR, NH4SH unchanged); false on ATJUP / ATNEPT / ATURAN (not measured there). =0 / =1 override.
  *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *
@@ -288,7 +293,7 @@ void SaturationAdjustment<Planet>::run(
     static const int bergeron = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_BERGERON"); return e ? atoi(e) : Planet::satadj_default_bergeron(); }();
     static const bool freeze = [](){                 // <TAG>_SATADJ_FREEZE (see the note at the top)
-        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_FREEZE"); return e && atoi(e) != 0; }();
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_FREEZE"); return e ? atoi(e) != 0 : Planet::satadj_default_freeze(); }();
     const bool freeze_on = freeze && conserve && t_00 > 0.0 && t_00 < t_0;
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
