@@ -507,6 +507,9 @@ void cUranusModel::Run(){
         r_h2 *= f; r_he *= f; r_ch4 *= f; r_nh3 *= f; r_h2s *= f; r_h2o *= f; r_nh4sh *= f;
         c_h2 *= f; c_he *= f; c_ch4 *= f; c_nh3 *= f; c_h2s *= f; c_h2o *= f; c_nh4sh *= f;
         r_mix *= f; c_mix *= f;
+        if(CpH2::on<cUranusModel>()) printf("      ATURAN: ATURAN_CP_H2 %d, ATURAN_CP_GAS %d (CpH2.h): bottom T from the cp(T) adiabat %.2f K (constant-gam %.2f K); cp(70 / 100 / 150 / 250 K) = %.0f / %.0f / %.0f / %.0f J/(kg K) (cp_mix %.0f); the gam lines below are the constant-gam reference\n",
+               CpH2::mode<cUranusModel>(), (int)CpH2::gas<cUranusModel>(), T_bottom, t_1bar_K() * std::pow(p_bottom_bar(), gam * R_ref / g),
+               CpH2::cp_lapse(*this, 70.0), CpH2::cp_lapse(*this, 100.0), CpH2::cp_lapse(*this, 150.0), CpH2::cp_lapse(*this, 250.0), cp_mix);
         const double n = g / (gam * R_ref);
         printf("      ATURAN: T_INIT_ANCHOR: adiabat through %.1f K at 1 bar, n = %.4f; bottom %.2f K at %.2f bar;"
                " reference densities x %.4f (r_mix %.4f kg/m3); L_atm %.1f km\n",

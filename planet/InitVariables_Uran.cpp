@@ -39,10 +39,13 @@ void cUranusModel::init_temperature(){
             const bool anchor = t_init_anchor() != 0;
             const double T_bottom = anchor ? t_bottom_anchor_K() : T_top + gam * L_atm;  // K at i=0
 
+            std::vector<double> Tcp_;                                   // ATURAN_CP_H2 / _CP_GAS (CpH2.h): the cp(T) column
+            if(CpH2::on<cUranusModel>()) cp_column(T_bottom, T_top, Tcp_);
             for(int i = 0; i < im; i++){
                 height = get_layer_height(i);                           // km
                 t.x[i][j][k] = (T_bottom - gam * height) / t_ref;
                 if(anchor) t.x[i][j][k] = std::max(T_bottom - gam * height, T_top) / t_ref;
+                if(CpH2::on<cUranusModel>()) t.x[i][j][k] = Tcp_[i] / t_ref;
 
 /*
     cout.precision(10);
@@ -341,6 +344,7 @@ void cUranusModel::init_PressureStatic(){
             const double T_top    = t.x[im-1][j][k] * t_ref;
             const double h_trop   = (T_bottom - T_top) / gam;           // km
             const double p_trop   = p_bottom * pow(T_top / T_bottom, exp_pressure);
+            if(CpH2::on<cUranusModel>()){ cp_hydro_p(j, k, p_bottom); continue; }   // ATURAN_CP_H2 / _CP_GAS: hydrostatic up the cp(T) column
             for(int i = 0; i < im; i++){
                 p_stat.x[i][j][k] = p_bottom
                     * pow(t.x[i][j][k] / t.x[0][j][k], exp_pressure);

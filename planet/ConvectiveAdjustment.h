@@ -51,6 +51,7 @@
 #pragma once
 
 #include "ATPhys.h"
+#include "CpH2.h"     // <TAG>_CP_H2 / _CP_GAS: cp(T) and H(T) in the MCA's h_L
 
 #include <cmath>
 #include <algorithm>
@@ -107,6 +108,8 @@ inline void ConvectiveAdjustment<Model>::run(){
     const double dz_m      = (m.L_atm * 1.0e3) / double(m.im - 1);
     const double lapse_fac = ATPhys::env_double(TAG, "CONV_ADJ_LAPSE", 1.0);
     const double dT_ad_nd  = lapse_fac * (m.g / m.cp_mix) * dz_m / m.t_ref;
+    if(CpH2::dyn_on<Model>()){ static bool warned = false; if(!warned){ warned = true;
+        std::cout << "      " << TAG << ": WARNING -- the dry CONV_ADJ keeps the constant cp_mix; " << TAG << "_CP_H2 / _CP_GAS act in the MCA, the RHS and the turbulence only (CpH2.h)" << std::endl; } }
 
     // A column is left alone unless it is superadiabatic by more than this, so that round-off
     // does not make the scheme fire on a column that is already neutral.
@@ -416,6 +419,10 @@ inline void MoistConvectiveAdjustment<Model>::run(){
 
     const int    ng = (int)G.size(), nt = (int)TR.size(), im = m.im;
     const double cp = m.cp_mix, grav = m.g;
+    // <TAG>_CP_H2 / <TAG>_CP_GAS (CpH2.h, default off): the dry part of h_L is the enthalpy H(T) of a T-dependent cp
+    // instead of cp_mix T; with both off H(T) is cp * T and every line below is the old one.
+    const bool cpT = CpH2::dyn_on<Model>();
+    auto H = [&](double TT){ return cpT ? CpH2::enth(m, TT) : cp * TT; };
     constexpr double tol_K = 1.0e-7;                // a pair is unstable when the parcel is warmer than this
     constexpr int    n_iter   = 60;             // cap of the equilibrium solve
     constexpr double tol_T    = 1.0e-10;        // K, its bracket width
@@ -454,7 +461,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
     // 60, and the bracket keeps it safe at the kinks of t_0 and of q_t = q_sat). cond[g] receives the
     // condensate. Returns false if the state has no positive temperature.
     auto equil = [&](double hL, const double* qt, double p, double z, double& T, double* cond) -> bool {
-        const double T_lo = (hL - grav * z) / cp;
+        const double T_lo = cpT ? CpH2::enth_inv(m, hL - grav * z, 0.0) : (hL - grav * z) / cp;
         if(!(T_lo > 0.0) || !(p > 0.0)) return false;
         bool any = false;
         for(int g = 0; g < ng; g++) if(qt[g] > qsat(g, T_lo, p)){ any = true; break; }
@@ -462,10 +469,10 @@ inline void MoistConvectiveAdjustment<Model>::run(){
         double span = 0.0;
         for(int g = 0; g < ng; g++) span += std::max(G[g].lv, G[g].ls) * std::max(0.0, qt[g]);
         auto fof = [&](double TT){
-            double f = cp * TT + grav * z - hL;
+            double f = H(TT) + grav * z - hL;
             for(int g = 0; g < ng; g++) f -= lat(g, TT) * std::max(0.0, qt[g] - qsat(g, TT, p));
             return f; };
-        double a = T_lo, b = T_lo + span / cp + 1.0e-9;
+        double a = T_lo, b = cpT ? CpH2::enth_inv(m, H(T_lo) + span, T_lo) + 1.0e-9 : T_lo + span / cp + 1.0e-9;
         double fa = fof(a), fb = fof(b);
         int side = 0;
         for(int it = 0; it < n_iter && b - a > tol_T; it++){
@@ -500,7 +507,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
             const double TT = m.t.x[i][j][k] * m.t_ref, rr = m.rho_at(i, j, k), zz = double(m.get_layer_height(i)) * 1.0e3;
             if(!(TT > 0.0) || !(rr > 0.0) || !std::isfinite(TT + rr)) continue;
             const size_t c = cid(i, j, k);
-            double h = cp * TT + grav * zz;
+            double h = H(TT) + grav * zz;
             for(int g = 0; g < ng; g++){
                 const double v_ = std::max(0.0, G[g].v->x[i][j][k]) / rr, c_ = std::max(0.0, G[g].c->x[i][j][k]) / rr,
                              i_ = std::max(0.0, G[g].ice->x[i][j][k]) / rr;
@@ -581,7 +588,7 @@ inline void MoistConvectiveAdjustment<Model>::run(){
                 const double hi = (i < i1) ? 0.5 * (z[i] + z[i+1]) : z[i1];
                 w[i] = rho[i] * (hi - lo);
                 if(!(w[i] > 0.0)) ok = false;
-                double h = cp * T[i] + grav * z[i];
+                double h = H(T[i]) + grav * z[i];
                 for(int g = 0; g < ng; g++){
                     const int x = i * ng + g;
                     qv[x] = std::max(0.0, G[g].v->x[i][j][k])   / rho[i];

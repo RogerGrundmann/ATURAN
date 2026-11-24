@@ -73,6 +73,7 @@
 
 #pragma once
 
+#include "CpH2.h"     // <TAG>_CP_H2 / _CP_GAS: g / cp(T) in the buoyancy sink
 #include "ConvectiveAdjustment.h"   // ATPhys::env_for and friends
 
 #include <algorithm>
@@ -840,7 +841,7 @@ inline void Turbulence<Planet>::compute_sources(){
                         const double T  = m.t.x[i][j][k] * m.t_ref;
                         const double dz = height_m(i+1) - height_m(i-1);
                         const double dTdz = (m.t.x[i+1][j][k] - m.t.x[i-1][j][k]) * m.t_ref / dz;
-                        double Gam = m.g / m.cp_mix, fac = 1.0;
+                        double Gam = m.g / CpH2::cp_lapse(m, T), fac = 1.0;     // <TAG>_CP_H2 / _CP_GAS (CpH2.h); off = cp_mix
                         if(buoy == 3 && T > 0.0){
                             const double rho = m.rho_at(i, j, k);
                             double A = 0.0, B = 0.0;
@@ -851,7 +852,7 @@ inline void Turbulence<Planet>::compute_sources(){
                                 const double qv = std::max(0.0, gv->x[i][j][k]) / rho;
                                 const double L  = T >= t0 ? lv : ls;
                                 A += L * qv / (m.R_mix * T);
-                                B += ep * L * L * qv / (m.cp_mix * m.R_mix * T * T);
+                                B += ep * L * L * qv / (CpH2::cp_lapse(m, T) * m.R_mix * T * T);
                             }
                             if(std::isfinite(A + B)){ Gam *= (1.0 + A) / (1.0 + B); fac = 1.0 + A; }
                         }

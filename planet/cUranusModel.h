@@ -10,6 +10,7 @@
 #include <chrono>
 #include <ctime>    
 #include <cmath>
+#include <vector>
 #include <map>
 #include <set>
 #include <limits>
@@ -30,6 +31,7 @@
 #include "Utils.h"
 #include "Config.h"
 #include "BoundaryConditions.h"   // BCForm, and the shared BC template
+#include "CpH2.h"                // <TAG>_CP_H2 / _CP_GAS (shared; refused here, see cp_lapse_supported)
 
 
 #ifdef _OPENMP
@@ -57,6 +59,7 @@ class cUranusModel{
     template<class M> friend class Reporting;
     template<class M> friend class BoundaryConditions;
     template<class M> friend class Turbulence;
+    template<class M> friend struct CpH2::Lapse;      // <TAG>_CP_H2 / _CP_GAS (shared CpH2.h)
     template<class M> friend class ProcessDiag;
     template<class M> friend class Radiation;
     template<class M> friend class Precipitation;
@@ -140,7 +143,40 @@ public:
     }
     // Bottom temperature [K] of the anchored profile; needs gam (cUranusModel.cpp sets it).
     double t_bottom_anchor_K() const {
+        if(CpH2::on<cUranusModel>()) return t_bottom_cp_K();     // ATURAN_CP_H2 / _CP_GAS: the cp(T) adiabat, same 1-bar anchor
         return t_1bar_K() * std::pow(p_bottom_bar(), gam * R_ref / g);
+    }
+    // ATURAN_CP_H2 / ATURAN_CP_GAS (shared CpH2.h, 2026-11-24, row GIANTS-ICE-TP): dlnT/dlnp = R / cp(T) (R = R_ref in J/(kg K))
+    // from (1 bar, t_1bar_K()) down to p_bottom_bar(); the column then follows dT/dz = -g / cp(T) up to T_top (cp_column),
+    // and the set-up p_stat is integrated up that column (cp_hydro_p) instead of the constant-gam polytrope.
+    double t_bottom_cp_K() const {
+        const double Rk = R_ref * 1.0e3; double T = t_1bar_K(); const int n = 2000; const double h = std::log(p_bottom_bar()) / n;
+        for(int s_ = 0; s_ < n; s_++){
+            const double k1 = T * Rk / CpH2::cp_lapse(*this, T), Tm = T + 0.5 * h * k1;
+            T += h * Tm * Rk / CpH2::cp_lapse(*this, Tm);
+        }
+        return T;
+    }
+    void cp_column(double T_bottom, double T_top, std::vector<double>& Tz){         // not const: get_layer_height() is not
+        Tz.assign(im, 0.0); double T = T_bottom; Tz[0] = T;
+        for(int i = 1; i < im; i++){
+            const double dz = (double)(get_layer_height(i) - get_layer_height(i-1)) * 1.0e3, hz = dz / 20.0;
+            for(int s_ = 0; s_ < 20 && T > T_top; s_++){
+                const double Tm = T - 0.5 * hz * g / CpH2::cp_lapse(*this, T);
+                T -= hz * g / CpH2::cp_lapse(*this, Tm);
+            }
+            T = std::max(T, T_top); Tz[i] = T;
+        }
+    }
+    void cp_hydro_p(int j, int k, double p_bottom){                 // layer by layer, exact for T linear in z (as ATSAT's PSTAT_HYDRO)
+        double p = p_bottom; p_stat.x[0][j][k] = p;
+        for(int i = 1; i < im; i++){
+            const double T0 = t.x[i-1][j][k] * t_ref, T1 = t.x[i][j][k] * t_ref;
+            const double a = g * (double)(get_layer_height(i) - get_layer_height(i-1)) / R_ref;   // g dz / R, in K (dz km, R J/(g K))
+            const double dT = T0 - T1;
+            p *= (std::fabs(dT) > 1.0e-9 * T0) ? std::pow(T1 / T0, a / dT) : std::exp(-a / T0);
+            p_stat.x[i][j][k] = p;
+        }
     }
 
     // ---- RK4 stage accumulators, for the separated integrator ----
@@ -549,6 +585,11 @@ public:
     static int satadj_default_bergeron(){ return 0; }
     // <TAG>_SATADJ_FREEZE of the shared SaturationAdjustment.h (2026-11-24): off here (ATSAT only, row GIANTS-PHASE-OUTSIDE).
     static bool satadj_default_freeze(){ return false; }
+    // <TAG>_CP_H2 / <TAG>_CP_GAS of the shared CpH2.h (2026-11-24, row GIANTS-ICE-TP): the cp(T) set-up adiabat (1-bar anchor)
+    // and the hydrostatic p it needs: PORTED here 2026-11-24 (user: "yes, start porting to ATURAN and ATNEPT"); p_stat is set once
+    // at the set-up on this model (satadj_updates_pstat false), so only the set-up needs the hydrostatic column.
+    static bool cp_lapse_supported(){ return true; }     // ported 2026-11-24 (set-up adiabat + hydrostatic set-up p; CpH2.h)
+    static bool cp_lapse_in_dynamics(){ return true; }    // CpH2.h: cp(T) also in the RHS / MCA / turbulence once ported
     // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
     // ATURAN_PRECIP_SCALE overrides. CALIBRATED 2026-10-12 by the rule the Jovian and Saturnian
     // sets were made with: the latent-heat flux of the precipitation, Lv * (mean over the columns
