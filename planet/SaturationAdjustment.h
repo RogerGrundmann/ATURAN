@@ -151,6 +151,20 @@
  * (CH_4000 restart 4000 -> 5000: holes 3 -> 0, non-converged 0, NH3 liquid -> 0, ice x1.55, up to
  * +1.1 K under the vortex), 0 on ATSAT / ATNEPT / ATURAN (not measured there). =0 restores.
  *
+ * ===== <TAG>_SATADJ_FREEZE (2026-11-24), DEFAULT 0 =====
+ *
+ * Row GIANTS-PHASE-OUTSIDE. Liquid colder than t_00 was never frozen: the adjustment only moves the
+ * VAPOUR to saturation, so in such a cell the liquid evaporates until the vapour is saturated and the
+ * rest stays liquid -- the one phase move it had is the opposite one (the CONSERVE melt above t_0).
+ * MEASURED on ATSAT (ATSAT_PHASE_DIAG, satchk/phaseout_2026-11-24 P1, DL 5000 -> 5100): the Runge-Kutta
+ * step puts H2O +203 / NH3 +349 g/m2 of liquid below t_00 per 100 iterations, and the adjustment,
+ * precipitation, clamp and MCA take out < 1e-11, so it only piles up (H2O 2.8 kg/m2 in 1.19 M cells,
+ * NH3 9.2 kg/m2 in 0.69 M cells at 5000, liquid NH3 up to the lid at ~82 K).
+ * With <TAG>_SATADJ_FREEZE=1 (and CONSERVE) a cell below t_00 that holds liquid freezes it at entry,
+ * before the saturation test, so also where the saturation value underflows: liquid -> ice, warmed by
+ * the latent heat of fusion and only as much as brings the cell up to t_00 -- the mirror of the melt.
+ * A gas without a band (t_00 <= 0 or >= t_0) is left alone. =0: every written field as before.
+ *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *
  * A cell that evaporates all its cloud and ice while its vapour is still below the target has
@@ -273,6 +287,9 @@ void SaturationAdjustment<Planet>::run(
     auto cnd_of = [&](double TT){ return TT <= t_00 ? 0.0 : (TT >= t_0 ? 1.0 : (TT - t_00) * t_range_inv); };
     static const int bergeron = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_BERGERON"); return e ? atoi(e) : Planet::satadj_default_bergeron(); }();
+    static const bool freeze = [](){                 // <TAG>_SATADJ_FREEZE (see the note at the top)
+        const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_FREEZE"); return e && atoi(e) != 0; }();
+    const bool freeze_on = freeze && conserve && t_00 > 0.0 && t_00 < t_0;
     static const bool dry_exit = [](){
         const char* e = ATPhys::env_for(Planet::planet_tag(), "SATADJ_DRY_EXIT"); return e ? atoi(e) != 0 : true; }();
     const double Lf = ls - lv;                       // latent heat of fusion, same unit as lv / ls
@@ -357,6 +374,20 @@ void SaturationAdjustment<Planet>::run(
                         if(ice.x[i][j][k] != 0.0){ b_entry_ice -= wgt * ice.x[i][j][k]; n_entry_ice++; }
                         ice.x[i][j][k] = 0.0;
                     }
+                }
+                // <TAG>_SATADJ_FREEZE (see the note at the top): liquid below t_00 freezes, warmed by Lf,
+                // only as much as brings the cell up to t_00.
+                if(freeze_on && t_u < t_00 && cloud.x[i][j][k] > 0.0){
+                    double dm = cloud.x[i][j][k];
+                    if(Lf > 0.0){
+                        const double hc  = m.cp_mix * m.rho_at(i, j, k);
+                        const double cap = hc * (t_00 - t_u) / Lf;
+                        if(dm > cap) dm = cap;
+                        t_u += Lf * dm / hc;
+                        m.t.x[i][j][k] = t_u / m.t_ref;
+                    }
+                    cloud.x[i][j][k] -= dm;
+                    ice.x[i][j][k]   += dm;
                 }
                 if(c.x[i][j][k]     < 0.0){ b_entry_neg -= wgt * c.x[i][j][k];     c.x[i][j][k]     = 0.0; }
                 if(cloud.x[i][j][k] < 0.0){ b_entry_neg -= wgt * cloud.x[i][j][k]; cloud.x[i][j][k] = 0.0; }
