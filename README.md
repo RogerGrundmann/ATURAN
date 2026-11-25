@@ -1,5 +1,20 @@
 # ATURAN
 
+A 3-D circulation model of **Uranus'** atmosphere with methane and H₂S clouds, chemistry and turbulence -- one of four sibling models of the giant planets.
+
+<p align="center"><img src="https://raw.githubusercontent.com/RogerGrundmann/ATURAN/ATURAN/doc/Uranus_cloud_streamlines.jpeg" width="560" alt="Uranus: cloud decks and stream lines on the sphere"></p>
+
+<p align="center"><sub>Cloud decks (coloured by density, cut open along a meridian) and wind stream lines (white) after the spin-up; more pictures and the comparison with observed cloud profiles under <i>Cloud profiles vs Atreya</i> below.</sub></p>
+
+**The giant-planet family.** The four models share one numerical core (finite differences on a 41 × 181 × 361 spherical grid, 4th-order Runge-Kutta, a Poisson pressure solver, OpenMP) and 14 byte-identical shared headers (saturation adjustment, precipitation, moist convection, turbulence, radiation, boundary conditions, pressure solver, observed jets, cp(T) and more); each adds its own planet's set-up, chemistry and boundaries. A fix made in one is ported to the others.
+
+| Planet | Model | Atmospheric shell | Cloud decks | What it looks at |
+|---|---|---|---|---|
+| Jupiter | [ATJUP](https://github.com/RogerGrundmann/ATJUP) | 140 km, ~13 bar to ~0.03 bar | H₂O, NH₄SH, NH₃ | the Great Red Spot: a wake behind a fixed obstacle, or a free vortex |
+| Saturn | [ATSAT](https://github.com/RogerGrundmann/ATSAT) | 500 km, ~55 bar to 0.04-0.07 bar | H₂O, NH₄SH, NH₃ | moist convection and the super-rotating equatorial jet; chromophore tracer |
+| Uranus | **ATURAN** (this repo) | 225 km, ~17 bar to 0.10-0.14 bar | CH₄, H₂S, NH₄SH, H₂O | the 98° tilt and the equator-to-pole temperature puzzle |
+| Neptune | [ATNEPT](https://github.com/RogerGrundmann/ATNEPT) | 200 km, ~32 bar to 0.03-0.05 bar | CH₄, H₂S, NH₄SH, H₂O | the fastest winds in the Solar System, driven by internal heat |
+
 Uranus atmospheric general circulation model based on the numerical framework of the ATOM
 climate model. Solves the 3-D Navier-Stokes equations in a spherical shell extending from
 the deep H₂O / NH₃ cloud decks up through the methane condensation layer that gives Uranus
