@@ -2,8 +2,10 @@
  * CpH2.h -- SHARED (byte-identical in ATJUP / ATSAT / ATNEPT / ATURAN, planet/SHARED.md5)
  *
  * <TAG>_CP_H2 = 0 | 1 | 2  and  <TAG>_CP_GAS = 0 | 1  (2026-11-24, row GIANTS-ICE-TP; user: "do both, start with the
- * T-dependent cp_h2", "yes, implement it this way with the 1-bar anchoring"). DEFAULT 0 / 0 = the constant cp_mix,
- * every written field as before.
+ * T-dependent cp_h2", "yes, implement it this way with the 1-bar anchoring"). Knobs 0 / 0 = the constant cp_mix, every
+ * written field as before. DEFAULTS since 2026-11-24 (user: "make the cp(T) knobs default on all four"; per model hooks
+ * Planet::cp_h2_default() / cp_gas_default()): ATSAT CP_H2 1, ATURAN CP_GAS 1 + CP_H2 2, ATNEPT CP_GAS 1 + CP_H2 1,
+ * ATJUP 0 / 0 (set-up not ported, the knobs are refused there).
  *
  * WHY. Every model's lapse rate is g / cp_mix with cp_h2 = 14.32e3 J/(kg K), the 298 K value of H2. Below ~250 K H2's
  * rotational heat capacity is smaller (normal H2, ortho:para frozen at 3:1: 10.6 kJ/(kg K) at 80 K, 12.5 at 150 K) or,
@@ -98,17 +100,19 @@ namespace CpH2 {
         return t.H[i] + DT * f * (t.cp[i] + 0.5 * f * (t.cp[i+1] - t.cp[i]));   // exact for linear cp in the step
     }
 
-    template<class Planet> int env_knob(const char* name){
-        const char* e = std::getenv((std::string(Planet::planet_tag()) + "_" + name).c_str()); return e ? std::atoi(e) : 0; }
+    // unset = the model's default (Planet::cp_h2_default() / cp_gas_default(), 2026-11-24, user: "make the cp(T) knobs
+    // default on all four": ATSAT 1 / 0, ATURAN 2 / 1, ATNEPT 1 / 1, ATJUP 0 / 0 -- its set-up is not ported); =0 restores.
+    template<class Planet> int env_knob(const char* name, int dflt){
+        const char* e = std::getenv((std::string(Planet::planet_tag()) + "_" + name).c_str()); return e ? std::atoi(e) : dflt; }
     template<class Planet> int mode(){
-        static const int v = [](){ const int k = env_knob<Planet>("CP_H2");
+        static const int v = [](){ const int k = env_knob<Planet>("CP_H2", Planet::cp_h2_default());
             if(k != 0 && !Planet::cp_lapse_supported()){
                 std::printf("      %s: %s_CP_H2=%d REFUSED -- this model has not ported the cp(T) set-up adiabat (CpH2.h); stays 0\n",
                             Planet::planet_tag(), Planet::planet_tag(), k); return 0; }
             return (k == 1 || k == 2) ? k : 0; }();
         return v; }
     template<class Planet> bool gas(){
-        static const bool v = [](){ const int k = env_knob<Planet>("CP_GAS");
+        static const bool v = [](){ const int k = env_knob<Planet>("CP_GAS", Planet::cp_gas_default() ? 1 : 0);
             if(k != 0 && !Planet::cp_lapse_supported()){
                 std::printf("      %s: %s_CP_GAS=%d REFUSED -- this model has not ported the cp(T) set-up adiabat (CpH2.h); stays 0\n",
                             Planet::planet_tag(), Planet::planet_tag(), k); return false; }

@@ -590,6 +590,9 @@ public:
     // at the set-up on this model (satadj_updates_pstat false), so only the set-up needs the hydrostatic column.
     static bool cp_lapse_supported(){ return true; }     // ported 2026-11-24 (set-up adiabat + hydrostatic set-up p; CpH2.h)
     static bool cp_lapse_in_dynamics(){ return true; }    // CpH2.h: cp(T) also in the RHS / MCA / turbulence once ported
+    // defaults of <TAG>_CP_H2 / <TAG>_CP_GAS (CpH2.h; 2026-11-24, user: "make the cp(T) knobs default on all four"; =0 restores)
+    static int cp_h2_default(){ return 2; }
+    static bool cp_gas_default(){ return true; }
     // Shared Precipitation.h: the factor on its five rate coefficients; 1 = the Jovian set.
     // ATURAN_PRECIP_SCALE overrides. CALIBRATED 2026-10-12 by the rule the Jovian and Saturnian
     // sets were made with: the latent-heat flux of the precipitation, Lv * (mean over the columns
