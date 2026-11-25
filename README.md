@@ -61,6 +61,10 @@ diffusion mass flux).
 
 Uranus, arm U1 (the defaults of 2026-11-24, `ATURAN_CP_H2` 2 + `_CP_GAS` 1, `satchk/cph2_2026-11-24`) at iteration 1000, against Atreya et al. 2020 Fig. 6 (case SN16_N5, S/N ~10x solar as in the set-up): H2S deck on Atreya's, CH4 cloud base ~1 bar (Atreya ~2.3). Condensate densities against temperature (left axis) and pressure (right axis) at three latitudes; liquid solid, ice dashed, NH4SH dotted; Atreya's ECCM shaded by pressure (bar = base) and as long dashes by temperature (x = base). Made with `python3 -I tools/cloudprofile_pv.py <zonal.vtk> --out <file.png>` (`--atreya <case>|none`, `--lat 0,45,75`); the set for all four giants is in `literature/cloudprofile_compare/` (outside the repo).
 
+![Cloud decks and stream lines on the sphere](https://raw.githubusercontent.com/RogerGrundmann/ATURAN/ATURAN/doc/Uranus_cloud_streamlines.jpeg)
+
+Uranus, arm U1 (the defaults of 2026-11-24, `satchk/cph2_2026-11-24`) at iteration 800: CH4 ice / cloud and H2S ice / cloud on the sphere (`<Planet>_sphere_<n>.vts`, shells exaggerated to 1..2 radii), each species as the region above 10 % of its maximum, cut along the 90 / 270 deg meridians, one colour bar per species; white: Velocity stream lines. Made with `python3 -I literature/sphere_screens.py <sphere.vts> <Planet>` (outside the repo). The ice giants' sphere files carry no H2S / CH4 condensate (their writer drops those arrays), so these species are the panorama's wrapped onto the shells (`--pano`).
+
 ---
 
 ## Repository Layout
