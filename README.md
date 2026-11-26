@@ -455,9 +455,10 @@ None of these stops a run; all of them affect what a result means.
    the pre-fix viscosity it engaged in 20 of 28 checkpoints. It is a guard against a NaN, not a
    dormant one, and a run that touches it is reporting a collapse, not a temperature.
 
-6. **The precipitation and turbulence modules are diagnostic-only here.** They fill their arrays and
-   nothing reads them back: `S_precip_*` reaches no RHS (`ATURAN_TURB_COUPLING` defaults to 1.0 since 2026-11-01).
-   Switching either on changes plots, not physics. Radiation is no longer in this list — see item 3.
+6. **Radiation is the one module that does not feed back by default.** Precipitation and turbulence
+   were diagnostic-only here once; both are coupled now: `ATURAN_PRECIP_COUPLING` 1.0 since 2026-10-12
+   (latent heat into `rhs_t`, `S_precip_*` into the species equations) and `ATURAN_TURB_COUPLING` 1.0
+   since 2026-11-01. `ATURAN_RAD_COUPLING` can reach `rhs_t` but is 0.0 by default; see item 3.
 
 7. **The multi-thread race is fixed; one order-dependent diagnostic remains.** It was
    `PressureSolverUran.h`'s in-place Gauss-Seidel parallelised across its own stencil, and it is now

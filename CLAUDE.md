@@ -4,10 +4,11 @@
 
 Moved verbatim from README.md on 2026-11-26 (the README keeps a short summary of this section). A new knob gets its row HERE, not in the README.
 
-Every module is **off by default** and a stock run is unaffected by its presence. Set the
-environment variable to enable. All of them fill diagnostic arrays. Only one of them can feed back
-into the temperature equation — `ATURAN_RAD_COUPLING`, added after ATJUP's and ATSAT's; precipitation
-and turbulence remain diagnostic-only here.
+Radiation, precipitation (with the shared saturation adjustment), turbulence and the moist convective
+adjustment all run by default. Precipitation and turbulence feed back: `ATURAN_PRECIP_COUPLING` 1.0
+(since 2026-10-12; latent heat into `rhs_t`, `S_precip_*` into the species equations) and
+`ATURAN_TURB_COUPLING` 1.0 (since 2026-11-01). Radiation does not: `ATURAN_RAD_COUPLING` is 0.0, so
+`Q_rad` is computed but stays diagnostic. Set a module's variable to 0 to switch it off.
 
 **Radiation** — grey two-stream, shared `Radiation.h`
 
