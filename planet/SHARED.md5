@@ -34,7 +34,7 @@ c888cf66b4badb33c51c6df2079f043e  planet/ConvectiveAdjustment.h
 6d995fa0274016fa27e5d8b83c965661  planet/ProcessDiag.h
 0fb6bb0fcc468d3a85e69b5b0946c4ed  planet/Radiation.h
 971cde804d42bdd9f3d55b6ee7802463  planet/Reporting.h
-63c285e98131fc12fa34e3c5daabf057  planet/SaturationAdjustment.h
+4207a468e2bc7fbda728f2c843c6ef8f  planet/SaturationAdjustment.h
 ca6324aa3a0732e7a77500a3e225ac65  planet/Turbulence.h
 a820eb2bc2aca932a6ad6ab6b6948a2f  planet/JetRef.h
 54ffd5647bbf10319ba7027d8b3be280  planet/CpH2.h

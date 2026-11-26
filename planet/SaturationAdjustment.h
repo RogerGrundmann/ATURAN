@@ -149,7 +149,7 @@
  * ATOM_Precipitation has the same split and no such case (checked 2026-10-25).
  * Default per planet through Planet::satadj_default_bergeron() (2026-10-25, user): 2 on ATJUP
  * (CH_4000 restart 4000 -> 5000: holes 3 -> 0, non-converged 0, NH3 liquid -> 0, ice x1.55, up to
- * +1.1 K under the vortex), 0 on ATNEPT / ATURAN (not measured there); 2 on ATSAT since 2026-11-24 (with its FREEZE default,
+ * +1.1 K under the vortex), 2 on ATSAT since 2026-11-24 and on ATNEPT / ATURAN since 2026-11-26 (each with its FREEZE default,
  * see <TAG>_SATADJ_FREEZE). =0 restores.
  *
  * ===== <TAG>_SATADJ_FREEZE (2026-11-24), DEFAULT Planet::satadj_default_freeze() =====
@@ -168,7 +168,10 @@
  * Default per planet through Planet::satadj_default_freeze() (2026-11-24, user: "choose Saturn's default FREEZE plus
  * BERGERON 2"): true on ATSAT, together with its BERGERON default 2 (DL 5000 -> 5500, satchk/phaseout_2026-11-24: liquid
  * below t_00 H2O 3738 -> ~0, NH3 10953 -> ~0 g/m2; H2O ice in its band with liquid from ~273 K, Atreya & Wong 2005 Fig. 3's
- * phase structure; T, winds, OLR, NH4SH unchanged); false on ATJUP / ATNEPT / ATURAN (not measured there). =0 / =1 override.
+ * phase structure; T, winds, OLR, NH4SH unchanged); true on ATNEPT / ATURAN too since 2026-11-26, also with BERGERON 2
+ * (satchk/phaseout_2026-11-26, 1000 it from scratch: liquid below t_00 H2S / CH4 0.022 / 0.22 -> 5e-5 / 5e-4 on Uranus,
+ * 0.069 / 0.31 -> 1e-4 / 1e-3 on Neptune, the H2S deck mostly ice; T, winds, residuum unchanged); false on ATJUP (not
+ * measured there). =0 / =1 override.
  *
  * ===== <TAG>_SATADJ_DRY_EXIT (2026-10-22), DEFAULT 1 =====
  *

@@ -581,10 +581,12 @@ public:
     // the local density, and <TAG>_LOCAL_RHO is 1 since 2026-10-27). Without it cloud and ice never evaporate, so the
     // set-up NH3 condensate outlived the NH4SH equilibrium that took its vapour (arm X1, satchk/nh4sheq_2026-11-22).
     static bool satadj_default_evap(){ return true; }
-    // <TAG>_SATADJ_BERGERON of the shared SaturationAdjustment.h (2026-10-25): off here -- measured on ATJUP only.
-    static int satadj_default_bergeron(){ return 0; }
-    // <TAG>_SATADJ_FREEZE of the shared SaturationAdjustment.h (2026-11-24): off here (ATSAT only, row GIANTS-PHASE-OUTSIDE).
-    static bool satadj_default_freeze(){ return false; }
+    // <TAG>_SATADJ_BERGERON of the shared SaturationAdjustment.h (2026-10-25): 2 here since 2026-11-26, with FREEZE
+    // (row GIANTS-PHASE-OUTSIDE, user: "FREEZE 1 + BERGERON 2", Saturn's pair; satchk/phaseout_2026-11-26 arm 2). =0 restores.
+    static int satadj_default_bergeron(){ return 2; }
+    // <TAG>_SATADJ_FREEZE of the shared SaturationAdjustment.h (2026-11-24): ON here since 2026-11-26 (row
+    // GIANTS-PHASE-OUTSIDE; liquid below t_00 H2S / CH4 down 300-1400x, T / winds / residuum unchanged). =0 restores.
+    static bool satadj_default_freeze(){ return true; }
     // <TAG>_CP_H2 / <TAG>_CP_GAS of the shared CpH2.h (2026-11-24, row GIANTS-ICE-TP): the cp(T) set-up adiabat (1-bar anchor)
     // and the hydrostatic p it needs: PORTED here 2026-11-24 (user: "yes, start porting to ATURAN and ATNEPT"); p_stat is set once
     // at the set-up on this model (satadj_updates_pstat false), so only the set-up needs the hydrostatic column.
